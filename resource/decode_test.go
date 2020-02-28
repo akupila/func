@@ -212,6 +212,11 @@ resource "func" {
 							Role:    "testrole",
 						},
 						SourceCode: &resource.SourceCode{
+							Definition: hcl.Range{
+								Filename: "file.hcl",
+								Start:    hcl.Pos{Line: 8, Column: 2, Byte: 127},
+								End:      hcl.Pos{Line: 8, Column: 8, Byte: 133},
+							},
 							Dir: "src",
 						},
 					},
@@ -248,6 +253,11 @@ resource "func" {
 							Role:    "testrole",
 						},
 						SourceCode: &resource.SourceCode{
+							Definition: hcl.Range{
+								Filename: "a/b/c/foo.hcl",
+								Start:    hcl.Pos{Line: 8, Column: 2, Byte: 127},
+								End:      hcl.Pos{Line: 8, Column: 8, Byte: 133},
+							},
 							Dir: "a/b/c/source",
 						},
 					},

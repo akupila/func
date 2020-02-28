@@ -166,9 +166,12 @@ func (d *decoder) DecodeResource(block *hcl.Block) (*decoderResource, hcl.Diagno
 	if srcAttr := content.GetAttr("source"); !srcAttr.IsNull() {
 		filename := body.MissingItemRange().Filename
 		resourceDir := filepath.Dir(filename)
+		cont, _, _ := block.Body.PartialContent(hcldec.ImpliedSchema(spec["source"]))
+		rng := cont.Blocks[0].DefRange
 		dir := filepath.Join(resourceDir, srcAttr.GetAttr("dir").AsString())
 		source = &SourceCode{
-			Dir: dir,
+			Definition: rng,
+			Dir:        dir,
 		}
 	}
 
