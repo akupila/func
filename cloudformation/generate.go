@@ -28,6 +28,8 @@ type Template struct {
 	AWSTemplateFormatVersion string              `json:"AWSTemplateFormatVersion"`
 	Description              string              `json:"Description,omitempty"`
 	Resources                map[string]Resource `json:"Resources,omitempty"`
+
+	logicalMapping map[string]string // CloudFormation logical ID -> resource name
 }
 
 // A Resource is a CloudFormation encoded resource.
@@ -84,12 +86,14 @@ func (g *Generator) Generate(ctx context.Context, graph *resource.Graph) (*Templ
 		S3Bucket:  g.S3Bucket,
 		CacheDir:  cacheDir,
 	}
-	resources, diags := gen.Generate(ctx)
 
 	template := &Template{
 		AWSTemplateFormatVersion: "2010-09-09",
-		Resources:                resources,
+		Resources:                make(map[string]Resource, len(graph.Resources)),
+		logicalMapping:           make(map[string]string, len(graph.Resources)),
 	}
+	diags := gen.Generate(ctx, template)
+
 	return template, diags
 }
 
@@ -112,8 +116,7 @@ type generator struct {
 	CacheDir  string
 }
 
-func (g *generator) Generate(ctx context.Context) (map[string]Resource, hcl.Diagnostics) {
-	out := make(map[string]Resource, len(g.Resources))
+func (g *generator) Generate(ctx context.Context, tmpl *Template) hcl.Diagnostics {
 	var mu sync.Mutex
 	var diags hcl.Diagnostics
 
@@ -124,7 +127,9 @@ func (g *generator) Generate(ctx context.Context) (map[string]Resource, hcl.Diag
 			res, morediags := g.processResource(ctx, input)
 			mu.Lock()
 			diags = append(diags, morediags...)
-			out[resourceName(name)] = res
+			logicalName := resourceName(name)
+			tmpl.Resources[logicalName] = res
+			tmpl.logicalMapping[logicalName] = name
 			mu.Unlock()
 			if morediags.HasErrors() {
 				return morediags
@@ -136,7 +141,7 @@ func (g *generator) Generate(ctx context.Context) (map[string]Resource, hcl.Diag
 	// Any errors are added to diagnostics, safe to ignore error
 	_ = eg.Wait()
 
-	return out, diags
+	return diags
 }
 
 func (g *generator) processResource(ctx context.Context, input resource.Resource) (Resource, hcl.Diagnostics) {
@@ -440,6 +445,11 @@ func (e *encoder) config(name string) interface{} {
 		return nil
 	}
 	return res.Config
+}
+
+func (t Template) LookupResource(logicalName string) (string, bool) {
+	name, ok := t.logicalMapping[logicalName]
+	return name, ok
 }
 
 func isEmpty(val interface{}) bool {
