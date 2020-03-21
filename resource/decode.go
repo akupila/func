@@ -15,7 +15,7 @@ import (
 
 // Decode decodes a configuration body to a resource graph.
 // Resources must be registered in the schema registry.
-func Decode(body hcl.Body, registry *Registry) (*Graph, hcl.Diagnostics) {
+func Decode(body hcl.Body, registry *Registry) (List, hcl.Diagnostics) {
 	rootBodySchema := &hcl.BodySchema{
 		Blocks: []hcl.BlockHeaderSchema{
 			{Type: "resource", LabelNames: []string{"name"}},
@@ -47,23 +47,25 @@ func Decode(body hcl.Body, registry *Registry) (*Graph, hcl.Diagnostics) {
 		return nil, diags
 	}
 
-	g := &Graph{
-		Resources: make(map[string]Resource, len(dec.Resources)),
-	}
+	out := make(List, 0, len(dec.Resources))
 
 	for name, res := range dec.Resources {
 		cfg, _ := registry.New(res.Type)
 		setValue(res.Config, cfg)
-		g.Resources[name] = Resource{
+		out = append(out, &Resource{
+			Name:       name,
 			Type:       res.Type,
 			Definition: res.Definition,
 			SourceCode: res.SourceCode,
 			Config:     cfg.Interface(),
 			Refs:       res.Refs,
-		}
+		})
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Definition.String() < out[j].Definition.String()
+	})
 
-	return g, diags
+	return out, diags
 }
 
 type decoder struct {

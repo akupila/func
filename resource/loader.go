@@ -18,7 +18,7 @@ type Loader struct {
 
 // LoadDir loads the resource graph from a given directory and all sub
 // directories. All .hcl files are parsed and decoded to the resulting graph.
-func (l *Loader) LoadDir(dir string) (*Graph, hcl.Diagnostics) {
+func (l *Loader) LoadDir(dir string) (List, hcl.Diagnostics) {
 	var diags hcl.Diagnostics
 
 	var files []string

@@ -10,18 +10,39 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-// A Graph represents a decoded resource graph.
-type Graph struct {
-	Resources map[string]Resource
-}
+// List is a list of decoded resources.
+type List []*Resource
 
 // A Resource is the configuration for a resource.
 type Resource struct {
+	Name       string
 	Type       string
 	Definition hcl.Range
 	SourceCode *SourceCode
 	Config     interface{} // Shape depends on Type
 	Refs       []Reference
+}
+
+// ByName returns a resource by name. The name must exactly match the resource
+// name. If no such resource exists, nil is returned.
+func (l List) ByName(name string) *Resource {
+	for _, r := range l {
+		if r.Name == name {
+			return r
+		}
+	}
+	return nil
+}
+
+// OfType returns a new list of all resources that have a certain type.
+func (l List) OfType(typename string) List {
+	var out List
+	for _, r := range l {
+		if r.Type == typename {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // A Reference represents a referenced value between two resources.

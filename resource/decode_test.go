@@ -18,7 +18,7 @@ func TestDecoder_Decode(t *testing.T) {
 		name      string
 		filename  string
 		input     string
-		want      *resource.Graph
+		want      resource.List
 		wantDiags hcl.Diagnostics
 	}{
 		// Attributes
@@ -34,21 +34,20 @@ resource "func" {
 	memory_size = 256
 }
 			`,
-			want: &resource.Graph{
-				Resources: map[string]resource.Resource{
-					"func": {
-						Type: "aws:lambda_function",
-						Definition: hcl.Range{
-							Filename: "file.hcl",
-							Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-							End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
-						},
-						Config: LambdaFunction{
-							Handler:    "index.handler",
-							Runtime:    "nodejs10.x",
-							Role:       "testrole",
-							MemorySize: intptr(256),
-						},
+			want: resource.List{
+				{
+					Name: "func",
+					Type: "aws:lambda_function",
+					Definition: hcl.Range{
+						Filename: "file.hcl",
+						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
+						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+					},
+					Config: LambdaFunction{
+						Handler:    "index.handler",
+						Runtime:    "nodejs10.x",
+						Role:       "testrole",
+						MemorySize: intptr(256),
 					},
 				},
 			},
@@ -72,23 +71,22 @@ resource "func" {
 	}
 }
 			`,
-			want: &resource.Graph{
-				Resources: map[string]resource.Resource{
-					"func": {
-						Type: "aws:lambda_function",
-						Definition: hcl.Range{
-							Filename: "file.hcl",
-							Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-							End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
-						},
-						Config: LambdaFunction{
-							Handler: "index.handler",
-							Runtime: "nodejs10.x",
-							Role:    "testrole",
-							Environment: &LambdaEnvironment{
-								Variables: map[string]string{
-									"foo": "bar",
-								},
+			want: resource.List{
+				{
+					Name: "func",
+					Type: "aws:lambda_function",
+					Definition: hcl.Range{
+						Filename: "file.hcl",
+						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
+						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+					},
+					Config: LambdaFunction{
+						Handler: "index.handler",
+						Runtime: "nodejs10.x",
+						Role:    "testrole",
+						Environment: &LambdaEnvironment{
+							Variables: map[string]string{
+								"foo": "bar",
 							},
 						},
 					},
@@ -134,46 +132,45 @@ resource "role" {
 	}
 }
 			`,
-			want: &resource.Graph{
-				Resources: map[string]resource.Resource{
-					"role": {
-						Type: "aws:iam_role",
-						Definition: hcl.Range{
-							Filename: "file.hcl",
-							Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-							End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+			want: resource.List{
+				{
+					Name: "role",
+					Type: "aws:iam_role",
+					Definition: hcl.Range{
+						Filename: "file.hcl",
+						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
+						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+					},
+					Config: IAMRole{
+						AssumeRolePolicy: IAMPolicyDocument{
+							Statements: []IAMPolicyStatement{{
+								Effect:  "Allow",
+								Actions: []string{"sts:AssumeRole"},
+								Principals: map[string][]string{
+									"Service": []string{"lambda.amazonaws.com"},
+								},
+							}},
 						},
-						Config: IAMRole{
-							AssumeRolePolicy: IAMPolicyDocument{
+						Policies: []NamedIAMPolicyDocument{
+							{
+								Name: "Logs",
 								Statements: []IAMPolicyStatement{{
-									Effect:  "Allow",
-									Actions: []string{"sts:AssumeRole"},
-									Principals: map[string][]string{
-										"Service": []string{"lambda.amazonaws.com"},
-									},
+									Effect:    "Allow",
+									Actions:   []string{"logs:*"},
+									Resources: []string{"*"},
 								}},
 							},
-							Policies: []NamedIAMPolicyDocument{
-								{
-									Name: "Logs",
-									Statements: []IAMPolicyStatement{{
-										Effect:    "Allow",
-										Actions:   []string{"logs:*"},
-										Resources: []string{"*"},
-									}},
-								},
-								{
-									Name: "DynamoDB",
-									Statements: []IAMPolicyStatement{{
-										Effect:    "Allow",
-										Actions:   []string{"dynamodb:GetItem"},
-										Resources: []string{"table1"},
-									}, {
-										Effect:    "Allow",
-										Actions:   []string{"dynamodb:PutItem"},
-										Resources: []string{"table2"},
-									}},
-								},
+							{
+								Name: "DynamoDB",
+								Statements: []IAMPolicyStatement{{
+									Effect:    "Allow",
+									Actions:   []string{"dynamodb:GetItem"},
+									Resources: []string{"table1"},
+								}, {
+									Effect:    "Allow",
+									Actions:   []string{"dynamodb:PutItem"},
+									Resources: []string{"table2"},
+								}},
 							},
 						},
 					},
@@ -197,28 +194,27 @@ resource "func" {
 	}
 }
 			`,
-			want: &resource.Graph{
-				Resources: map[string]resource.Resource{
-					"func": {
-						Type: "aws:lambda_function",
+			want: resource.List{
+				{
+					Name: "func",
+					Type: "aws:lambda_function",
+					Definition: hcl.Range{
+						Filename: "file.hcl",
+						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
+						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+					},
+					Config: LambdaFunction{
+						Handler: "index.handler",
+						Runtime: "nodejs10.x",
+						Role:    "testrole",
+					},
+					SourceCode: &resource.SourceCode{
 						Definition: hcl.Range{
 							Filename: "file.hcl",
-							Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-							End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+							Start:    hcl.Pos{Line: 8, Column: 2, Byte: 127},
+							End:      hcl.Pos{Line: 8, Column: 8, Byte: 133},
 						},
-						Config: LambdaFunction{
-							Handler: "index.handler",
-							Runtime: "nodejs10.x",
-							Role:    "testrole",
-						},
-						SourceCode: &resource.SourceCode{
-							Definition: hcl.Range{
-								Filename: "file.hcl",
-								Start:    hcl.Pos{Line: 8, Column: 2, Byte: 127},
-								End:      hcl.Pos{Line: 8, Column: 8, Byte: 133},
-							},
-							Dir: "src",
-						},
+						Dir: "src",
 					},
 				},
 			},
@@ -238,28 +234,27 @@ resource "func" {
 	}
 }
 			`,
-			want: &resource.Graph{
-				Resources: map[string]resource.Resource{
-					"func": {
-						Type: "aws:lambda_function",
+			want: resource.List{
+				{
+					Name: "func",
+					Type: "aws:lambda_function",
+					Definition: hcl.Range{
+						Filename: "a/b/c/foo.hcl",
+						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
+						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+					},
+					Config: LambdaFunction{
+						Handler: "index.handler",
+						Runtime: "nodejs10.x",
+						Role:    "testrole",
+					},
+					SourceCode: &resource.SourceCode{
 						Definition: hcl.Range{
 							Filename: "a/b/c/foo.hcl",
-							Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-							End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+							Start:    hcl.Pos{Line: 8, Column: 2, Byte: 127},
+							End:      hcl.Pos{Line: 8, Column: 8, Byte: 133},
 						},
-						Config: LambdaFunction{
-							Handler: "index.handler",
-							Runtime: "nodejs10.x",
-							Role:    "testrole",
-						},
-						SourceCode: &resource.SourceCode{
-							Definition: hcl.Range{
-								Filename: "a/b/c/foo.hcl",
-								Start:    hcl.Pos{Line: 8, Column: 2, Byte: 127},
-								End:      hcl.Pos{Line: 8, Column: 8, Byte: 133},
-							},
-							Dir: "a/b/c/source",
-						},
+						Dir: "a/b/c/source",
 					},
 				},
 			},
@@ -284,41 +279,41 @@ resource "b" {
 	role    = a.role
 }
 			`,
-			want: &resource.Graph{
-				Resources: map[string]resource.Resource{
-					"a": {
-						Type: "aws:lambda_function",
-						Definition: hcl.Range{
-							Filename: "file.hcl",
-							Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-							End:      hcl.Pos{Line: 2, Column: 13, Byte: 13},
-						},
-						Config: LambdaFunction{
-							Handler: "index.handler",
-							Runtime: "nodejs10.x",
-							Role:    "testrole",
-						},
+			want: resource.List{
+				{
+					Name: "a",
+					Type: "aws:lambda_function",
+					Definition: hcl.Range{
+						Filename: "file.hcl",
+						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
+						End:      hcl.Pos{Line: 2, Column: 13, Byte: 13},
 					},
-					"b": {
-						Type: "aws:lambda_function",
-						Definition: hcl.Range{
-							Filename: "file.hcl",
-							Start:    hcl.Pos{Line: 9, Column: 1, Byte: 125},
-							End:      hcl.Pos{Line: 9, Column: 13, Byte: 137},
-						},
-						Config: LambdaFunction{
-							Handler: "index.handler",
-							Runtime: "nodejs10.x",
-							Role:    "",
-						},
-						Refs: []resource.Reference{
-							{
-								Field: cty.GetAttrPath("role"),
-								Expression: &hclsyntax.ScopeTraversalExpr{
-									Traversal: hcl.Traversal{
-										hcl.TraverseRoot{Name: "a"},
-										hcl.TraverseAttr{Name: "role"},
-									},
+					Config: LambdaFunction{
+						Handler: "index.handler",
+						Runtime: "nodejs10.x",
+						Role:    "testrole",
+					},
+				},
+				{
+					Name: "b",
+					Type: "aws:lambda_function",
+					Definition: hcl.Range{
+						Filename: "file.hcl",
+						Start:    hcl.Pos{Line: 9, Column: 1, Byte: 125},
+						End:      hcl.Pos{Line: 9, Column: 13, Byte: 137},
+					},
+					Config: LambdaFunction{
+						Handler: "index.handler",
+						Runtime: "nodejs10.x",
+						Role:    "",
+					},
+					Refs: []resource.Reference{
+						{
+							Field: cty.GetAttrPath("role"),
+							Expression: &hclsyntax.ScopeTraversalExpr{
+								Traversal: hcl.Traversal{
+									hcl.TraverseRoot{Name: "a"},
+									hcl.TraverseAttr{Name: "role"},
 								},
 							},
 						},
@@ -359,55 +354,55 @@ resource "func" {
 	role    = role.arn
 }
 			`,
-			want: &resource.Graph{
-				Resources: map[string]resource.Resource{
-					"role": {
-						Type: "aws:iam_role",
-						Definition: hcl.Range{
-							Filename: "file.hcl",
-							Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-							End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
-						},
-						Config: IAMRole{
-							AssumeRolePolicy: IAMPolicyDocument{
-								Statements: []IAMPolicyStatement{{
-									Effect:  "Allow",
-									Actions: []string{"sts:AssumeRole"},
-									Principals: map[string][]string{
-										"Service": []string{"lambda.amazonaws.com"},
-									},
-								}},
-							},
-							Policies: []NamedIAMPolicyDocument{{
-								Name: "Logs",
-								Statements: []IAMPolicyStatement{{
-									Effect:    "Allow",
-									Actions:   []string{"logs:*"},
-									Resources: []string{"*"},
-								}},
+			want: resource.List{
+				{
+					Name: "role",
+					Type: "aws:iam_role",
+					Definition: hcl.Range{
+						Filename: "file.hcl",
+						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
+						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+					},
+					Config: IAMRole{
+						AssumeRolePolicy: IAMPolicyDocument{
+							Statements: []IAMPolicyStatement{{
+								Effect:  "Allow",
+								Actions: []string{"sts:AssumeRole"},
+								Principals: map[string][]string{
+									"Service": []string{"lambda.amazonaws.com"},
+								},
 							}},
 						},
+						Policies: []NamedIAMPolicyDocument{{
+							Name: "Logs",
+							Statements: []IAMPolicyStatement{{
+								Effect:    "Allow",
+								Actions:   []string{"logs:*"},
+								Resources: []string{"*"},
+							}},
+						}},
 					},
-					"func": {
-						Type: "aws:lambda_function",
-						Definition: hcl.Range{
-							Filename: "file.hcl",
-							Start:    hcl.Pos{Line: 24, Column: 1, Byte: 321},
-							End:      hcl.Pos{Line: 24, Column: 16, Byte: 336},
-						},
-						Config: LambdaFunction{
-							Handler: "index.handler",
-							Runtime: "nodejs10.x",
-							Role:    "",
-						},
-						Refs: []resource.Reference{
-							{
-								Field: cty.GetAttrPath("role"),
-								Expression: &hclsyntax.ScopeTraversalExpr{
-									Traversal: hcl.Traversal{
-										hcl.TraverseRoot{Name: "role"},
-										hcl.TraverseAttr{Name: "arn"},
-									},
+				},
+				{
+					Name: "func",
+					Type: "aws:lambda_function",
+					Definition: hcl.Range{
+						Filename: "file.hcl",
+						Start:    hcl.Pos{Line: 24, Column: 1, Byte: 321},
+						End:      hcl.Pos{Line: 24, Column: 16, Byte: 336},
+					},
+					Config: LambdaFunction{
+						Handler: "index.handler",
+						Runtime: "nodejs10.x",
+						Role:    "",
+					},
+					Refs: []resource.Reference{
+						{
+							Field: cty.GetAttrPath("role"),
+							Expression: &hclsyntax.ScopeTraversalExpr{
+								Traversal: hcl.Traversal{
+									hcl.TraverseRoot{Name: "role"},
+									hcl.TraverseAttr{Name: "arn"},
 								},
 							},
 						},
@@ -429,21 +424,20 @@ resource "func" {
 	description = 12345
 }
 			`,
-			want: &resource.Graph{
-				Resources: map[string]resource.Resource{
-					"func": {
-						Type: "aws:lambda_function",
-						Definition: hcl.Range{
-							Filename: "file.hcl",
-							Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-							End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
-						},
-						Config: LambdaFunction{
-							Handler:     "index.handler",
-							Runtime:     "nodejs10.x",
-							Role:        "testrole",
-							Description: strptr("12345"),
-						},
+			want: resource.List{
+				{
+					Name: "func",
+					Type: "aws:lambda_function",
+					Definition: hcl.Range{
+						Filename: "file.hcl",
+						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
+						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+					},
+					Config: LambdaFunction{
+						Handler:     "index.handler",
+						Runtime:     "nodejs10.x",
+						Role:        "testrole",
+						Description: strptr("12345"),
 					},
 				},
 			},
@@ -829,16 +823,15 @@ resource "func" {
 	role        = "testrole"
 }
 			`,
-			want: &resource.Graph{
-				Resources: map[string]resource.Resource{
-					"func": {
-						Type: "aws:lambda_function",
-						Config: LambdaFunction{
-							Handler:     "index.handler",
-							Runtime:     "nodejs10.x",
-							Role:        "testrole",
-							Description: strptr("12345"),
-						},
+			want: resource.List{
+				{
+					Name: "func",
+					Type: "aws:lambda_function",
+					Config: LambdaFunction{
+						Handler:     "index.handler",
+						Runtime:     "nodejs10.x",
+						Role:        "testrole",
+						Description: strptr("12345"),
 					},
 				},
 			},
