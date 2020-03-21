@@ -26,10 +26,8 @@ import (
 )
 
 func TestGenerate_empty(t *testing.T) {
-	g := &resource.Graph{}
-
 	gen := &Generator{S3Client: &mockS3{}}
-	got, diags := gen.Generate(context.Background(), g)
+	got, diags := gen.Generate(context.Background(), resource.List{})
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -50,21 +48,20 @@ func TestGenerate_arguments(t *testing.T) {
 
 	strptr := func(v string) *string { return &v }
 
-	g := &resource.Graph{
-		Resources: map[string]resource.Resource{
-			"test_resource": {
-				Config: cfg{
-					String: "foo",
-					Slice:  []interface{}{"foo", "bar"},
-					Map:    map[string]interface{}{"foo": "bar"},
-					Ptr:    strptr("val"),
-				},
+	list := resource.List{
+		{
+			Name: "test_resource",
+			Config: cfg{
+				String: "foo",
+				Slice:  []interface{}{"foo", "bar"},
+				Map:    map[string]interface{}{"foo": "bar"},
+				Ptr:    strptr("val"),
 			},
 		},
 	}
 
 	gen := &Generator{S3Client: &mockS3{}}
-	got, diags := gen.Generate(context.Background(), g)
+	got, diags := gen.Generate(context.Background(), list)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -93,20 +90,19 @@ func TestGenerate_customEncoder(t *testing.T) {
 		Map   map[string]jsonValue `input:"map" cloudformation:"Map"`
 	}
 
-	g := &resource.Graph{
-		Resources: map[string]resource.Resource{
-			"custom_encoder": {
-				Config: cfg{
-					Value: jsonValue{SomeValue: "foo"},
-					List:  []jsonValue{{SomeValue: "foo"}, {SomeValue: "bar"}},
-					Map:   map[string]jsonValue{"foo": {SomeValue: "bar"}},
-				},
+	list := resource.List{
+		{
+			Name: "custom_encoder",
+			Config: cfg{
+				Value: jsonValue{SomeValue: "foo"},
+				List:  []jsonValue{{SomeValue: "foo"}, {SomeValue: "bar"}},
+				Map:   map[string]jsonValue{"foo": {SomeValue: "bar"}},
 			},
 		},
 	}
 
 	gen := &Generator{S3Client: &mockS3{}}
-	got, diags := gen.Generate(context.Background(), g)
+	got, diags := gen.Generate(context.Background(), list)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -144,25 +140,25 @@ func TestGenerate_references(t *testing.T) {
 		Input2 string `input:"in2" cloudformation:"In2"`
 	}
 
-	g := &resource.Graph{
-		Resources: map[string]resource.Resource{
-			"a": {
-				Type:   "a",
-				Config: a{testConfig: testConfig{Type: "test:a"}},
-			},
-			"b": {
-				Type:   "b",
-				Config: b{testConfig: testConfig{Type: "test:b"}},
-				Refs: []resource.Reference{
-					{Field: cty.GetAttrPath("in1"), Expression: parseExpr(t, "a.out1")},
-					{Field: cty.GetAttrPath("in2"), Expression: parseExpr(t, "a.out2")},
-				},
+	list := resource.List{
+		{
+			Name:   "a",
+			Type:   "a",
+			Config: a{testConfig: testConfig{Type: "test:a"}},
+		},
+		{
+			Name:   "b",
+			Type:   "b",
+			Config: b{testConfig: testConfig{Type: "test:b"}},
+			Refs: []resource.Reference{
+				{Field: cty.GetAttrPath("in1"), Expression: parseExpr(t, "a.out1")},
+				{Field: cty.GetAttrPath("in2"), Expression: parseExpr(t, "a.out2")},
 			},
 		},
 	}
 
 	gen := &Generator{S3Client: &mockS3{}}
-	got, diags := gen.Generate(context.Background(), g)
+	got, diags := gen.Generate(context.Background(), list)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -202,26 +198,25 @@ func TestGenerate_ignoreFields(t *testing.T) {
 		OnlyCF     string             `cloudformation:"CFOut"`                           // Only CloudFormation tag -> do NOT ignore
 	}
 
-	g := &resource.Graph{
-		Resources: map[string]resource.Resource{
-			"test_resource": {
-				Config: cfg{
-					String:     "", // Do not output empty strings
-					EmptySlice: []string{},
-					EmptyMap:   map[string]string{},
-					SliceNil:   []*string{nil},
-					MapNil:     map[string]*string{"foo": nil},
-					Ptr:        nil,   // Skip nil pointer
-					NotCF:      "foo", // Skip field without CloudFormation tag
-					NotInput:   "bar", // Marked as output
-					OnlyCF:     "xxx",
-				},
+	list := resource.List{
+		{
+			Name: "test_resource",
+			Config: cfg{
+				String:     "", // Do not output empty strings
+				EmptySlice: []string{},
+				EmptyMap:   map[string]string{},
+				SliceNil:   []*string{nil},
+				MapNil:     map[string]*string{"foo": nil},
+				Ptr:        nil,   // Skip nil pointer
+				NotCF:      "foo", // Skip field without CloudFormation tag
+				NotInput:   "bar", // Marked as output
+				OnlyCF:     "xxx",
 			},
 		},
 	}
 
 	gen := &Generator{S3Client: &mockS3{}}
-	got, diags := gen.Generate(context.Background(), g)
+	got, diags := gen.Generate(context.Background(), list)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -250,20 +245,19 @@ func TestGenerate_notCloudFormation(t *testing.T) {
 		End:      hcl.Pos{Line: 1, Column: 2, Byte: 1},
 	}
 
-	g := &resource.Graph{
-		Resources: map[string]resource.Resource{
-			"test_resource": {
-				Type:       "test:resource",
-				Definition: def,
-				Config: notCFResource{
-					String: "foo",
-				},
+	list := resource.List{
+		{
+			Name:       "test_resource",
+			Type:       "test:resource",
+			Definition: def,
+			Config: notCFResource{
+				String: "foo",
 			},
 		},
 	}
 
 	gen := &Generator{}
-	_, diags := gen.Generate(context.Background(), g)
+	_, diags := gen.Generate(context.Background(), list)
 
 	wantDiags := hcl.Diagnostics{{
 		Severity: hcl.DiagError,
@@ -293,13 +287,12 @@ func TestGenerate_uploadSource(t *testing.T) {
 		"index.js": testFile,
 	})
 
-	g := &resource.Graph{
-		Resources: map[string]resource.Resource{
-			"test_resource": {
-				Config: &testSourceConfig{},
-				SourceCode: &resource.SourceCode{
-					Dir: temp,
-				},
+	list := resource.List{
+		{
+			Name:   "test_resource",
+			Config: &testSourceConfig{},
+			SourceCode: &resource.SourceCode{
+				Dir: temp,
 			},
 		},
 	}
@@ -330,10 +323,10 @@ func TestGenerate_uploadSource(t *testing.T) {
 				}
 			},
 		},
-		S3Bucket:   bucket,
+		S3Bucket: bucket,
 		CacheDir: cache,
 	}
-	got, diags := gen.Generate(context.Background(), g)
+	got, diags := gen.Generate(context.Background(), list)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -365,13 +358,12 @@ func TestGenerate_uploadSource_cached(t *testing.T) {
 		"index.js": testFile,
 	})
 
-	g := &resource.Graph{
-		Resources: map[string]resource.Resource{
-			"test_resource": {
-				Config: &testSourceConfig{},
-				SourceCode: &resource.SourceCode{
-					Dir: temp,
-				},
+	list := resource.List{
+		{
+			Name:   "test_resource",
+			Config: &testSourceConfig{},
+			SourceCode: &resource.SourceCode{
+				Dir: temp,
 			},
 		},
 	}
@@ -406,10 +398,10 @@ func TestGenerate_uploadSource_cached(t *testing.T) {
 				}
 			},
 		},
-		S3Bucket:   bucket,
+		S3Bucket: bucket,
 		CacheDir: cache,
 	}
-	got, diags := gen.Generate(context.Background(), g)
+	got, diags := gen.Generate(context.Background(), list)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -440,13 +432,12 @@ func TestGenerate_sourceExists(t *testing.T) {
 		"index.js": testFile,
 	})
 
-	g := &resource.Graph{
-		Resources: map[string]resource.Resource{
-			"test_resource": {
-				Config: &testSourceConfig{},
-				SourceCode: &resource.SourceCode{
-					Dir: temp,
-				},
+	list := resource.List{
+		{
+			Name:   "test_resource",
+			Config: &testSourceConfig{},
+			SourceCode: &resource.SourceCode{
+				Dir: temp,
 			},
 		},
 	}
@@ -463,10 +454,10 @@ func TestGenerate_sourceExists(t *testing.T) {
 				t.Errorf("Want no uploads, got upload for %s", *input.Key)
 			},
 		},
-		S3Bucket:   "testbucket",
+		S3Bucket: "testbucket",
 		CacheDir: cache,
 	}
-	got, diags := gen.Generate(context.Background(), g)
+	got, diags := gen.Generate(context.Background(), list)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -492,19 +483,18 @@ func TestGenerate_noSource(t *testing.T) {
 		End:      hcl.Pos{Line: 1, Column: 2, Byte: 1},
 	}
 
-	g := &resource.Graph{
-		Resources: map[string]resource.Resource{
-			"test_resource": {
-				Type:       "test:resource",
-				Definition: def,
-				Config:     &testSourceConfig{}, // Requires source
-				SourceCode: nil,                 // .. but not set
-			},
+	list := resource.List{
+		{
+			Name:       "test_resource",
+			Type:       "test:resource",
+			Definition: def,
+			Config:     &testSourceConfig{}, // Requires source
+			SourceCode: nil,                 // .. but not set
 		},
 	}
 
 	gen := &Generator{}
-	_, diags := gen.Generate(context.Background(), g)
+	_, diags := gen.Generate(context.Background(), list)
 
 	wantDiags := hcl.Diagnostics{{
 		Severity: hcl.DiagError,

@@ -75,13 +75,13 @@ type Generator struct {
 }
 
 // Generate generates a CloudFormation template from a resource graph.
-func (g *Generator) Generate(ctx context.Context, graph *resource.Graph) (*Template, hcl.Diagnostics) {
+func (g *Generator) Generate(ctx context.Context, resources resource.List) (*Template, hcl.Diagnostics) {
 	cacheDir := g.CacheDir
 	if cacheDir == "" {
 		cacheDir = defaultCacheDir()
 	}
 	gen := &generator{
-		Resources: graph.Resources,
+		Resources: resources,
 		S3Client:  g.S3Client,
 		S3Bucket:  g.S3Bucket,
 		CacheDir:  cacheDir,
@@ -89,8 +89,8 @@ func (g *Generator) Generate(ctx context.Context, graph *resource.Graph) (*Templ
 
 	template := &Template{
 		AWSTemplateFormatVersion: "2010-09-09",
-		Resources:                make(map[string]Resource, len(graph.Resources)),
-		logicalMapping:           make(map[string]string, len(graph.Resources)),
+		Resources:                make(map[string]Resource, len(resources)),
+		logicalMapping:           make(map[string]string, len(resources)),
 	}
 	diags := gen.Generate(ctx, template)
 
@@ -110,7 +110,7 @@ func defaultCacheDir() string {
 }
 
 type generator struct {
-	Resources map[string]resource.Resource
+	Resources resource.List
 	S3Client  s3iface.ClientAPI
 	S3Bucket  string
 	CacheDir  string
@@ -121,15 +121,15 @@ func (g *generator) Generate(ctx context.Context, tmpl *Template) hcl.Diagnostic
 	var diags hcl.Diagnostics
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for name, input := range g.Resources {
-		name, input := name, input
+	for _, input := range g.Resources {
+		input := input
 		eg.Go(func() error {
 			res, morediags := g.processResource(ctx, input)
 			mu.Lock()
 			diags = append(diags, morediags...)
-			logicalName := resourceName(name)
+			logicalName := resourceName(input.Name)
 			tmpl.Resources[logicalName] = res
-			tmpl.logicalMapping[logicalName] = name
+			tmpl.logicalMapping[logicalName] = input.Name
 			mu.Unlock()
 			if morediags.HasErrors() {
 				return morediags
@@ -144,7 +144,7 @@ func (g *generator) Generate(ctx context.Context, tmpl *Template) hcl.Diagnostic
 	return diags
 }
 
-func (g *generator) processResource(ctx context.Context, input resource.Resource) (Resource, hcl.Diagnostics) {
+func (g *generator) processResource(ctx context.Context, input *resource.Resource) (Resource, hcl.Diagnostics) {
 	t, ok := input.Config.(SupportedResource)
 	if !ok {
 		return Resource{}, hcl.Diagnostics{{
@@ -206,7 +206,7 @@ func (g *generator) processResource(ctx context.Context, input resource.Resource
 	return res, nil
 }
 
-func (g *generator) sourceKey(ctx context.Context, res resource.Resource) (string, error) {
+func (g *generator) sourceKey(ctx context.Context, res *resource.Resource) (string, error) {
 	src, err := res.SourceFiles()
 	if err != nil {
 		return "", err
@@ -290,7 +290,7 @@ func (g *generator) sourceExists(ctx context.Context, key string) (bool, error) 
 }
 
 type encoder struct {
-	Resources map[string]resource.Resource
+	Resources resource.List
 	Refs      []resource.Reference
 }
 
@@ -440,8 +440,8 @@ func (e *encoder) makeRef(ref resource.Reference) (interface{}, error) {
 }
 
 func (e *encoder) config(name string) interface{} {
-	res, ok := e.Resources[name]
-	if !ok {
+	res := e.Resources.ByName(name)
+	if res == nil {
 		return nil
 	}
 	return res.Config
