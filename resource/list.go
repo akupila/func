@@ -45,6 +45,18 @@ func (l List) OfType(typename string) List {
 	return out
 }
 
+// WithSource returns a list of resources that have source code.
+func (l List) WithSource() List {
+	var out List
+	for _, r := range l {
+		if r.SourceCode == nil {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // A Reference represents a referenced value between two resources.
 type Reference struct {
 	Field      cty.Path

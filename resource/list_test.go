@@ -58,6 +58,20 @@ func TestList_OfType(t *testing.T) {
 	}
 }
 
+func TestList_WithSource(t *testing.T) {
+	foo := &Resource{Name: "Foo"}
+	bar := &Resource{Name: "Bar", SourceCode: &SourceCode{}}
+	baz := &Resource{Name: "Bar", SourceCode: &SourceCode{}}
+
+	list := List{foo, bar, baz}
+
+	got := list.WithSource()
+	want := List{bar, baz}
+	if diff := cmp.Diff(got, want); diff != "" {
+		t.Errorf("Diff (-got +want)\n%s", diff)
+	}
+}
+
 func TestResource_SourceFiles(t *testing.T) {
 	dir, done := writeTestFiles(t, map[string][]byte{
 		"main.go":    []byte("package main"),
