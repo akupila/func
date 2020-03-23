@@ -1,26 +1,14 @@
 package cloudformation
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/awserr"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/s3iface"
-	"github.com/aws/aws-sdk-go-v2/service/s3/s3manager"
 	"github.com/func/func/resource"
-	"github.com/func/func/source"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/zclconf/go-cty/cty"
-	"golang.org/x/sync/errgroup"
 )
 
 // A Template represents an AWS CloudFormation template.
@@ -45,14 +33,14 @@ type SupportedResource interface {
 	CloudFormationType() string
 }
 
-// S3SourceSetter is implemented by resources that support getting their
+// SourceSetter is implemented by resources that support getting their
 // source code from S3. If implemented, the resource's source code is
 // processed, zipped and uploaded to S3. The key is then passed to the resource
 // prior to encoding it.
 //
 // Implementing the interface makes the source code required. In case the user
 // does not provide source code, error diagnostics are returned.
-type S3SourceSetter interface {
+type SourceSetter interface {
 	SetS3SourceCode(bucket, key string)
 }
 
@@ -64,87 +52,53 @@ type Encoder interface {
 	CloudFormation() (interface{}, error)
 }
 
-// A Generator generates CloudFormation templates from a resource graph.
-type Generator struct {
-	S3Client s3iface.ClientAPI
-	S3Bucket string
-
-	// CacheDir sets the cache directory to use for generated source zip files.
-	// If not set, a directory within the user's cache directory is used.
-	CacheDir string
+// S3Location is the location of a file in AWS S3.
+type S3Location struct {
+	Bucket string
+	Key    string
 }
 
 // Generate generates a CloudFormation template from a resource graph.
-func (g *Generator) Generate(ctx context.Context, resources resource.List) (*Template, hcl.Diagnostics) {
-	cacheDir := g.CacheDir
-	if cacheDir == "" {
-		cacheDir = defaultCacheDir()
-	}
+//
+// The source codes for all resources must be prepared in advanced and uploaded
+// to S3. The corresponding locations should be provided in sources, keyed by
+// resource name.
+//
+// For Lambda functions, the region of the S3 bucket must be in the same region
+// as the Lambda function.
+func Generate(resources resource.List, sources map[string]S3Location) (*Template, hcl.Diagnostics) {
 	gen := &generator{
+		Sources:   sources,
 		Resources: resources,
-		S3Client:  g.S3Client,
-		S3Bucket:  g.S3Bucket,
-		CacheDir:  cacheDir,
 	}
+	return gen.Generate()
+}
 
+type generator struct {
+	Sources   map[string]S3Location
+	Resources resource.List
+}
+
+func (g *generator) Generate() (*Template, hcl.Diagnostics) {
 	template := &Template{
 		AWSTemplateFormatVersion: "2010-09-09",
-		Resources:                make(map[string]Resource, len(resources)),
-		logicalMapping:           make(map[string]string, len(resources)),
+		Resources:                make(map[string]Resource, len(g.Resources)),
+		logicalMapping:           make(map[string]string, len(g.Resources)),
 	}
-	diags := gen.Generate(ctx, template)
+
+	var diags hcl.Diagnostics
+	for _, input := range g.Resources {
+		res, morediags := g.processResource(input)
+		diags = append(diags, morediags...)
+		logicalName := resourceName(input.Name)
+		template.Resources[logicalName] = res
+		template.logicalMapping[logicalName] = input.Name
+	}
 
 	return template, diags
 }
 
-func defaultCacheDir() string {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		dir = os.TempDir()
-	}
-	dir = filepath.Join(dir, "func")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		panic(err)
-	}
-	return dir
-}
-
-type generator struct {
-	Resources resource.List
-	S3Client  s3iface.ClientAPI
-	S3Bucket  string
-	CacheDir  string
-}
-
-func (g *generator) Generate(ctx context.Context, tmpl *Template) hcl.Diagnostics {
-	var mu sync.Mutex
-	var diags hcl.Diagnostics
-
-	eg, ctx := errgroup.WithContext(ctx)
-	for _, input := range g.Resources {
-		input := input
-		eg.Go(func() error {
-			res, morediags := g.processResource(ctx, input)
-			mu.Lock()
-			diags = append(diags, morediags...)
-			logicalName := resourceName(input.Name)
-			tmpl.Resources[logicalName] = res
-			tmpl.logicalMapping[logicalName] = input.Name
-			mu.Unlock()
-			if morediags.HasErrors() {
-				return morediags
-			}
-			return nil
-		})
-	}
-
-	// Any errors are added to diagnostics, safe to ignore error
-	_ = eg.Wait()
-
-	return diags
-}
-
-func (g *generator) processResource(ctx context.Context, input *resource.Resource) (Resource, hcl.Diagnostics) {
+func (g *generator) processResource(input *resource.Resource) (Resource, hcl.Diagnostics) {
 	t, ok := input.Config.(SupportedResource)
 	if !ok {
 		return Resource{}, hcl.Diagnostics{{
@@ -164,8 +118,9 @@ func (g *generator) processResource(ctx context.Context, input *resource.Resourc
 		Refs:      input.Refs,
 	}
 
-	if s3src, ok := input.Config.(S3SourceSetter); ok {
-		if input.SourceCode == nil {
+	if s3src, ok := input.Config.(SourceSetter); ok {
+		loc, ok := g.Sources[input.Name]
+		if !ok {
 			return Resource{}, hcl.Diagnostics{{
 				Severity: hcl.DiagError,
 				Summary:  "Source code not provided",
@@ -173,16 +128,7 @@ func (g *generator) processResource(ctx context.Context, input *resource.Resourc
 				Subject:  input.Definition.Ptr(),
 			}}
 		}
-		key, err := g.sourceKey(ctx, input)
-		if err != nil {
-			return Resource{}, hcl.Diagnostics{{
-				Severity: hcl.DiagError,
-				Summary:  "Could not process source code",
-				Detail:   fmt.Sprintf("Error: %v", err),
-				Subject:  input.SourceCode.Definition.Ptr(),
-			}}
-		}
-		s3src.SetS3SourceCode(g.S3Bucket, key)
+		s3src.SetS3SourceCode(loc.Bucket, loc.Key)
 	}
 
 	props, err := enc.Encode(reflect.ValueOf(input.Config), nil)
@@ -204,89 +150,6 @@ func (g *generator) processResource(ctx context.Context, input *resource.Resourc
 	}
 
 	return res, nil
-}
-
-func (g *generator) sourceKey(ctx context.Context, res *resource.Resource) (string, error) {
-	src, err := res.SourceFiles()
-	if err != nil {
-		return "", err
-	}
-	sum, err := src.Checksum()
-	if err != nil {
-		return "", err
-	}
-	key := sum + ".zip"
-
-	exists, err := g.sourceExists(ctx, key)
-	if err != nil {
-		return "", err
-	}
-	if !exists {
-		r, err := g.getSource(key, src)
-		if err != nil {
-			return "", fmt.Errorf("get source: %w", err)
-		}
-		if err := g.upload(ctx, key, r); err != nil {
-			return "", fmt.Errorf("upload: %w", err)
-		}
-	}
-
-	return key, nil
-}
-
-func (g *generator) getSource(key string, files *source.FileList) (*os.File, error) {
-	filename := filepath.Join(g.CacheDir, key)
-	f, err := os.Open(filename)
-	if err == nil {
-		// File was cached
-		return f, nil
-	}
-	if !os.IsNotExist(err) {
-		// Other error
-		return nil, err
-	}
-
-	f, err = os.Create(filename)
-	if err != nil {
-		return nil, fmt.Errorf("create zip file: %w", err)
-	}
-	if err := files.Zip(f); err != nil {
-		return nil, fmt.Errorf("compress: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		return nil, fmt.Errorf("sync: %w", err)
-	}
-	if _, err := f.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("seek: %w", err)
-	}
-
-	return f, nil
-}
-
-func (g *generator) upload(ctx context.Context, key string, body io.Reader) error {
-	mgr := s3manager.NewUploaderWithClient(g.S3Client)
-	_, err := mgr.UploadWithContext(ctx, &s3manager.UploadInput{
-		Bucket: aws.String(g.S3Bucket),
-		Key:    aws.String(key),
-		Body:   body,
-	})
-	return err
-}
-
-func (g *generator) sourceExists(ctx context.Context, key string) (bool, error) {
-	_, err := g.S3Client.HeadObjectRequest(&s3.HeadObjectInput{
-		Bucket: aws.String(g.S3Bucket),
-		Key:    aws.String(key),
-	}).Send(ctx)
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "NotFound" {
-				return false, nil
-			}
-			return false, err
-		}
-	}
-	return true, nil
 }
 
 type encoder struct {

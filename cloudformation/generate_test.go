@@ -1,24 +1,13 @@
 package cloudformation
 
 import (
-	"bytes"
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/awserr"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/s3iface"
 	"github.com/func/func/resource"
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/hcl/v2"
@@ -26,8 +15,7 @@ import (
 )
 
 func TestGenerate_empty(t *testing.T) {
-	gen := &Generator{S3Client: &mockS3{}}
-	got, diags := gen.Generate(context.Background(), resource.List{})
+	got, diags := Generate(resource.List{}, nil)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -60,8 +48,7 @@ func TestGenerate_arguments(t *testing.T) {
 		},
 	}
 
-	gen := &Generator{S3Client: &mockS3{}}
-	got, diags := gen.Generate(context.Background(), list)
+	got, diags := Generate(list, nil)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -101,8 +88,7 @@ func TestGenerate_customEncoder(t *testing.T) {
 		},
 	}
 
-	gen := &Generator{S3Client: &mockS3{}}
-	got, diags := gen.Generate(context.Background(), list)
+	got, diags := Generate(list, nil)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -157,8 +143,7 @@ func TestGenerate_references(t *testing.T) {
 		},
 	}
 
-	gen := &Generator{S3Client: &mockS3{}}
-	got, diags := gen.Generate(context.Background(), list)
+	got, diags := Generate(list, nil)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -215,8 +200,7 @@ func TestGenerate_ignoreFields(t *testing.T) {
 		},
 	}
 
-	gen := &Generator{S3Client: &mockS3{}}
-	got, diags := gen.Generate(context.Background(), list)
+	got, diags := Generate(list, nil)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -256,8 +240,7 @@ func TestGenerate_notCloudFormation(t *testing.T) {
 		},
 	}
 
-	gen := &Generator{}
-	_, diags := gen.Generate(context.Background(), list)
+	_, diags := Generate(list, nil)
 
 	wantDiags := hcl.Diagnostics{{
 		Severity: hcl.DiagError,
@@ -270,194 +253,23 @@ func TestGenerate_notCloudFormation(t *testing.T) {
 	}
 }
 
-var testFile = []byte("test")
-var testFileKey string
-
-func init() {
-	s := sha256.New()
-	s.Write(testFile)
-	testFileKey = hex.EncodeToString(s.Sum(nil)) + ".zip"
-}
-
-func TestGenerate_uploadSource(t *testing.T) {
-	temp, done := tempdir(t)
-	defer done()
-
-	writeFiles(t, temp, map[string][]byte{
-		"index.js": testFile,
-	})
-
+func TestGenerate_WithSource(t *testing.T) {
 	list := resource.List{
 		{
 			Name:   "test_resource",
 			Config: &testSourceConfig{},
-			SourceCode: &resource.SourceCode{
-				Dir: temp,
-			},
 		},
 	}
 
-	cache, done := tempdir(t)
-	defer done()
-
-	uploaded := false
-
-	bucket := "testbucket"
-	gen := &Generator{
-		S3Client: &mockS3{
-			onPut: func(input *s3.PutObjectInput) {
-				if *input.Bucket != bucket {
-					t.Errorf("Uploaded bucket does not match, got %q, want %q", *input.Bucket, bucket)
-				}
-				if *input.Key != testFileKey {
-					t.Errorf("Uploaded key does not match, got %q, want %q", *input.Key, testFileKey)
-				}
-				data, err := ioutil.ReadAll(input.Body)
-				if err != nil {
-					t.Fatal(err)
-				}
-				uploaded = true
-				zipLen := 158 // number of bytes of zip of testFile
-				if len(data) != zipLen {
-					t.Errorf("Uploaded length does not match, got %d, want %d", len(data), zipLen)
-				}
-			},
-		},
-		S3Bucket: bucket,
-		CacheDir: cache,
-	}
-	got, diags := gen.Generate(context.Background(), list)
-	if diags.HasErrors() {
-		t.Fatal(diags)
-	}
-
-	if !uploaded {
-		t.Error("File was not uploaded")
-	}
-
-	equalAsJSON(t, got, fmt.Sprintf(`{
-		"AWSTemplateFormatVersion": "2010-09-09",
-		"Resources": {
-			"TestResource": {
-				"Type": "CloudFormation::TestResourceWithSource",
-				"Properties": {
-					"Bucket": "testbucket",
-					"Key":    %q
-				}
-			}
-		}
-	}`, testFileKey))
-}
-
-// File available locally in cache but not remotely
-func TestGenerate_uploadSource_cached(t *testing.T) {
-	temp, done := tempdir(t)
-	defer done()
-
-	writeFiles(t, temp, map[string][]byte{
-		"index.js": testFile,
-	})
-
-	list := resource.List{
-		{
-			Name:   "test_resource",
-			Config: &testSourceConfig{},
-			SourceCode: &resource.SourceCode{
-				Dir: temp,
-			},
+	bucket, key := "bucket", "file.zip"
+	source := map[string]S3Location{
+		"test_resource": {
+			Bucket: bucket,
+			Key:    key,
 		},
 	}
 
-	cache, done := tempdir(t)
-	defer done()
-
-	// Write dummy file to cache
-	cached := []byte("cached")
-	if err := ioutil.WriteFile(filepath.Join(cache, testFileKey), cached, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	uploaded := false
-
-	bucket := "testbucket"
-	gen := &Generator{
-		S3Client: &mockS3{
-			onPut: func(input *s3.PutObjectInput) {
-				data, err := ioutil.ReadAll(input.Body)
-				if err != nil {
-					t.Fatal(err)
-				}
-				uploaded = true
-
-				if !bytes.Equal(data, cached) {
-					t.Helper()
-					t.Errorf(
-						"Uploaded data does not equal cached data\nGot\n%s\nWant\n%s",
-						hex.Dump(data), hex.Dump(cached),
-					)
-				}
-			},
-		},
-		S3Bucket: bucket,
-		CacheDir: cache,
-	}
-	got, diags := gen.Generate(context.Background(), list)
-	if diags.HasErrors() {
-		t.Fatal(diags)
-	}
-
-	if !uploaded {
-		t.Error("File was not uploaded")
-	}
-
-	equalAsJSON(t, got, fmt.Sprintf(`{
-		"AWSTemplateFormatVersion": "2010-09-09",
-		"Resources": {
-			"TestResource": {
-				"Type": "CloudFormation::TestResourceWithSource",
-				"Properties": {
-					"Bucket": "testbucket",
-					"Key":    %q
-				}
-			}
-		}
-	}`, testFileKey))
-}
-
-func TestGenerate_sourceExists(t *testing.T) {
-	temp, done := tempdir(t)
-	defer done()
-
-	writeFiles(t, temp, map[string][]byte{
-		"index.js": testFile,
-	})
-
-	list := resource.List{
-		{
-			Name:   "test_resource",
-			Config: &testSourceConfig{},
-			SourceCode: &resource.SourceCode{
-				Dir: temp,
-			},
-		},
-	}
-
-	cache, done := tempdir(t)
-	defer done()
-
-	gen := &Generator{
-		S3Client: &mockS3{
-			files: map[string][]byte{
-				testFileKey: testFile, // File already exists
-			},
-			onPut: func(input *s3.PutObjectInput) {
-				t.Errorf("Want no uploads, got upload for %s", *input.Key)
-			},
-		},
-		S3Bucket: "testbucket",
-		CacheDir: cache,
-	}
-	got, diags := gen.Generate(context.Background(), list)
+	got, diags := Generate(list, source)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -468,12 +280,12 @@ func TestGenerate_sourceExists(t *testing.T) {
 			"TestResource": {
 				"Type": "CloudFormation::TestResourceWithSource",
 				"Properties": {
-					"Bucket": "testbucket",
+					"Bucket": %q,
 					"Key":    %q
 				}
 			}
 		}
-	}`, testFileKey))
+	}`, bucket, key))
 }
 
 func TestGenerate_noSource(t *testing.T) {
@@ -489,12 +301,12 @@ func TestGenerate_noSource(t *testing.T) {
 			Type:       "test:resource",
 			Definition: def,
 			Config:     &testSourceConfig{}, // Requires source
-			SourceCode: nil,                 // .. but not set
 		},
 	}
 
-	gen := &Generator{}
-	_, diags := gen.Generate(context.Background(), list)
+	_, diags := Generate(list, map[string]S3Location{
+		"bar": {}, // no source set for "test_resource"
+	})
 
 	wantDiags := hcl.Diagnostics{{
 		Severity: hcl.DiagError,
@@ -564,73 +376,4 @@ func (t jsonValue) CloudFormation() (interface{}, error) {
 		return nil, err
 	}
 	return json.RawMessage(b), nil
-}
-
-type mockS3 struct {
-	s3iface.ClientAPI
-	files map[string][]byte
-
-	onPut func(input *s3.PutObjectInput)
-}
-
-func (m *mockS3) req() *aws.Request {
-	return &aws.Request{
-		HTTPRequest: &http.Request{
-			URL:    &url.URL{},
-			Header: make(http.Header),
-		},
-		HTTPResponse: &http.Response{},
-		Retryer:      aws.NewDefaultRetryer(),
-	}
-}
-
-func (m *mockS3) ListObjectsV2Request(input *s3.ListObjectsV2Input) s3.ListObjectsV2Request {
-	req := m.req()
-	req.Handlers.Send.PushBack(func(r *aws.Request) {
-		objects := make([]s3.Object, 0, len(m.files))
-		for name := range m.files {
-			objects = append(objects, s3.Object{
-				Key: aws.String(name),
-			})
-		}
-		sort.Slice(objects, func(i, j int) bool {
-			return *objects[i].Key < *objects[j].Key
-		})
-		r.Data = &s3.ListObjectsV2Output{
-			Contents: objects,
-		}
-	})
-	return s3.ListObjectsV2Request{Request: req}
-}
-
-func (m *mockS3) PutObjectRequest(input *s3.PutObjectInput) s3.PutObjectRequest {
-	req := m.req()
-	req.Handlers.Send.PushBack(func(r *aws.Request) {
-		if m.onPut != nil {
-			m.onPut(input)
-		}
-		b, err := ioutil.ReadAll(input.Body)
-		if err != nil {
-			r.Error = err
-			return
-		}
-		if m.files == nil {
-			m.files = make(map[string][]byte)
-		}
-		m.files[*input.Key] = b
-		r.Data = &s3.PutObjectOutput{}
-	})
-	return s3.PutObjectRequest{Request: req}
-}
-
-func (m *mockS3) HeadObjectRequest(input *s3.HeadObjectInput) s3.HeadObjectRequest {
-	req := m.req()
-	req.Handlers.Send.PushBack(func(r *aws.Request) {
-		if _, ok := m.files[*input.Key]; ok {
-			r.Data = &s3.HeadObjectOutput{}
-			return
-		}
-		r.Error = awserr.New("NotFound", "Not Found", nil)
-	})
-	return s3.HeadObjectRequest{Request: req}
 }

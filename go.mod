@@ -10,5 +10,4 @@ require (
 	github.com/stretchr/testify v1.4.0 // indirect
 	github.com/zclconf/go-cty v1.2.0
 	golang.org/x/net v0.0.0-20200202094626-16171245cfb2 // indirect
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 )
