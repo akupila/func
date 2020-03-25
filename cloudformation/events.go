@@ -21,6 +21,7 @@ type Event interface {
 type StackEvent struct {
 	Operation StackOperation
 	State     State
+	Reason    string
 }
 
 func (StackEvent) isEvent() {}
@@ -30,6 +31,7 @@ type ResourceEvent struct {
 	LogicalID string
 	Operation ResourceOperation
 	State     State
+	Reason    string
 }
 
 func (ResourceEvent) isEvent() {}
@@ -43,17 +45,27 @@ type ErrorEvent struct {
 func (ErrorEvent) isEvent() {}
 
 func stackEvent(ev cloudformation.StackEvent) StackEvent {
+	reason := ""
+	if ev.ResourceStatusReason != nil {
+		reason = *ev.ResourceStatusReason
+	}
 	return StackEvent{
 		Operation: parseStackOp(cloudformation.StackStatus(ev.ResourceStatus)),
-		State:     parseState(string(ev.ResourceStatus)),
+		State:     parseState(ev.ResourceStatus),
+		Reason:    reason,
 	}
 }
 
 func resourceEvent(ev cloudformation.StackEvent) ResourceEvent {
+	reason := ""
+	if ev.ResourceStatusReason != nil {
+		reason = *ev.ResourceStatusReason
+	}
 	return ResourceEvent{
 		LogicalID: *ev.LogicalResourceId,
 		Operation: parseResourceOp(ev.ResourceStatus),
-		State:     parseState(string(ev.ResourceStatus)),
+		State:     parseState(ev.ResourceStatus),
+		Reason:    reason,
 	}
 }
 
@@ -104,6 +116,11 @@ const (
 func parseStackOp(status cloudformation.StackStatus) StackOperation {
 	str := string(status)
 
+	if strings.HasPrefix(str, "ROLLBACK") ||
+		strings.HasPrefix(str, "UPDATE_ROLLBACK") ||
+		strings.HasPrefix(str, "IMPORT_ROLLBACK") {
+		return StackRollback
+	}
 	switch string(status)[0:6] {
 	case "CREATE":
 		return StackCreate
@@ -115,10 +132,6 @@ func parseStackOp(status cloudformation.StackStatus) StackOperation {
 		return StackImport
 	case "REVIEW":
 		return StackReview
-	}
-	if strings.Contains(str, "ROLLBACK") {
-		// Rollback, Update rollback, Import rollback
-		return StackRollback
 	}
 	panic(fmt.Sprintf("Unknown stack status %q", str))
 }
@@ -135,17 +148,18 @@ const (
 	StateSkipped
 )
 
-func parseState(status string) State {
+func parseState(status cloudformation.ResourceStatus) State {
+	str := string(status)
 	switch {
-	case strings.HasSuffix(status, "IN_PROGRESS"):
+	case strings.HasSuffix(str, "IN_PROGRESS"):
 		return StateInProgress
-	case strings.HasSuffix(status, "FAILED"):
+	case strings.HasSuffix(str, "FAILED"):
 		return StateFailed
-	case strings.HasSuffix(status, "COMPLETE"):
+	case strings.HasSuffix(str, "COMPLETE"):
 		return StateComplete
-	case strings.HasSuffix(status, "SKIPPED"):
+	case strings.HasSuffix(str, "SKIPPED"):
 		return StateSkipped
 	default:
-		panic(fmt.Sprintf("Unknown state in %q", status))
+		panic(fmt.Sprintf("Unknown state in %q", str))
 	}
 }
