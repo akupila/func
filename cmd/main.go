@@ -16,6 +16,7 @@ func Exec() {
 		},
 	}
 
+	cmd.AddCommand(versionCommand())
 	cmd.AddCommand(generateCommand())
 	cmd.AddCommand(deployCommand())
 
