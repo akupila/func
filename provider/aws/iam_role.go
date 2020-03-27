@@ -5,13 +5,13 @@ import (
 	"time"
 )
 
-type NamedIAMPolicyDocument struct {
+type namedIAMPolicyDocument struct {
 	Name       string               `input:"name,label"`
 	Version    *string              `input:"version"`
-	Statements []IAMPolicyStatement `input:"statement"`
+	Statements []iamPolicyStatement `input:"statement"`
 }
 
-func (p NamedIAMPolicyDocument) CloudFormation() (interface{}, error) {
+func (p namedIAMPolicyDocument) CloudFormation() (interface{}, error) {
 	b, err := marshalPolicy(p.Version, p.Statements)
 	if err != nil {
 		return nil, err
@@ -22,23 +22,23 @@ func (p NamedIAMPolicyDocument) CloudFormation() (interface{}, error) {
 	}, nil
 }
 
-type IAMPolicyDocument struct {
+type iamPolicyDocument struct {
 	Version    *string              `input:"version"`
-	Statements []IAMPolicyStatement `input:"statement"`
+	Statements []iamPolicyStatement `input:"statement"`
 }
 
-func (p IAMPolicyDocument) CloudFormation() (interface{}, error) {
+func (p iamPolicyDocument) CloudFormation() (interface{}, error) {
 	return marshalPolicy(p.Version, p.Statements)
 }
 
-type IAMPrincipal struct {
+type iamPrincipal struct {
 	AWS           []string `input:"aws"`
 	Service       []string `input:"service"`
 	CanonicalUser *string  `input:"canonical_user"`
 	Federated     *string  `input:"federated"`
 }
 
-func (p *IAMPrincipal) asMap() map[string]interface{} {
+func (p *iamPrincipal) asMap() map[string]interface{} {
 	if p == nil {
 		return nil
 	}
@@ -58,11 +58,11 @@ func (p *IAMPrincipal) asMap() map[string]interface{} {
 	return m
 }
 
-type IAMPolicyStatement struct {
+type iamPolicyStatement struct {
 	ID           *string                      `input:"id"`
 	Effect       string                       `input:"effect"`
-	Principal    *IAMPrincipal                `input:"principal"`
-	NotPrincipal *IAMPrincipal                `input:"not_principal"`
+	Principal    *iamPrincipal                `input:"principal"`
+	NotPrincipal *iamPrincipal                `input:"not_principal"`
 	Action       []string                     `input:"action"`
 	NotAction    []string                     `input:"not_action"`
 	Resource     []string                     `input:"resource"`
@@ -70,14 +70,15 @@ type IAMPolicyStatement struct {
 	Conditions   map[string]map[string]string `input:"condition"`
 }
 
+// IAMRole provides an IAM Role.
 type IAMRole struct {
-	AssumeRolePolicy    IAMPolicyDocument        `input:"assume_role_policy" cloudformation:"AssumeRolePolicyDocument"`
+	AssumeRolePolicy    iamPolicyDocument        `input:"assume_role_policy" cloudformation:"AssumeRolePolicyDocument"`
 	Description         *string                  `input:"description" cloudformation:"Description"`
 	ManagedPolicies     []string                 `input:"managed_policies" cloudformation:"ManagedPolicyArns"`
 	MaxSessionDuration  *time.Duration           `input:"max_session_duration" cloudformation:"MaxSessionDuration"`
 	Path                *string                  `input:"path" cloudformation:"Path"`
 	PermissionsBoundary *string                  `input:"permissions_boundary" cloudformation:"PermissionsBoundary"`
-	Policies            []NamedIAMPolicyDocument `input:"policy" cloudformation:"Policies"`
+	Policies            []namedIAMPolicyDocument `input:"policy" cloudformation:"Policies"`
 	Name                *string                  `input:"name" cloudformation:"RoleName,ref"`
 	Tags                Tags                     `input:"tags" cloudformation:"Tags"`
 
@@ -86,11 +87,12 @@ type IAMRole struct {
 	ID        *string   `output:"id" cloudformation:"RoleId,att"`
 }
 
+// CloudFormationType returns the AWS CloudFormation type for an IAM role.
 func (IAMRole) CloudFormationType() string {
 	return "AWS::IAM::Role"
 }
 
-func marshalPolicy(version *string, statements []IAMPolicyStatement) (json.RawMessage, error) {
+func marshalPolicy(version *string, statements []iamPolicyStatement) (json.RawMessage, error) {
 	type statement struct {
 		Sid          string                       `json:"Sid,omitempty"`
 		Effect       string                       `json:"Effect"`                 // Allow / Deny

@@ -4,13 +4,17 @@ linters-settings:
   lll:
     line-length: 140
 
+issues:
+  exclude-use-default: false
+
 linters:
   enable-all: true
   disable:
-    - wsl
-    - gomnd
-    - scopelint
     - dupl
     - funlen
     - gochecknoglobals
     - gocognit
+    - gomnd
+    - gosec
+    - scopelint
+    - wsl

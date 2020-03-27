@@ -310,9 +310,11 @@ func (e *encoder) config(name string) interface{} {
 	return res.Config
 }
 
-func (t Template) LookupResource(logicalName string) (string, bool) {
-	name, ok := t.logicalMapping[logicalName]
-	return name, ok
+// LookupResource looks up a resource by logical name. The returned string is
+// the user defined name. Returns an empty string if the resource does not
+// exist.
+func (t Template) LookupResource(logicalName string) string {
+	return t.logicalMapping[logicalName]
 }
 
 func isEmpty(val interface{}) bool {

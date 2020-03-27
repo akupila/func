@@ -74,6 +74,7 @@ type ResourceOperation int
 
 //go:generate go run golang.org/x/tools/cmd/stringer -type ResourceOperation -trimprefix Resource
 
+// Possible resource operations:
 const (
 	ResourceCreate ResourceOperation = iota
 	ResourceUpdate
@@ -103,6 +104,7 @@ type StackOperation int
 
 //go:generate go run golang.org/x/tools/cmd/stringer -type StackOperation -trimprefix Stack
 
+// Possible stack operations:
 const (
 	StackCreate StackOperation = iota
 	StackUpdate
@@ -141,6 +143,7 @@ type State int
 
 //go:generate go run golang.org/x/tools/cmd/stringer -type State -trimprefix State
 
+// Possible resource/stack states:
 const (
 	StateInProgress State = iota
 	StateFailed

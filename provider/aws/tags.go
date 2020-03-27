@@ -2,8 +2,10 @@ package aws
 
 import "sort"
 
+// Tags is a key-value mapping of tags.
 type Tags map[string]string
 
+// CloudFormation encodes the tags as CloudFormation compatible format.
 func (tt Tags) CloudFormation() (interface{}, error) {
 	type tag struct {
 		Key   string `json:"Key"`

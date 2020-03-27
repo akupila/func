@@ -11,7 +11,7 @@ type DiskCache struct {
 	Dir string
 }
 
-// NewCache creates a new cache on disk. The cached data is stored within a
+// NewDiskCache creates a new cache on disk. The cached data is stored within a
 // func directory in the user's cache directory. The path is created if needed.
 func NewDiskCache() (*DiskCache, error) {
 	cacheDir, err := os.UserCacheDir()

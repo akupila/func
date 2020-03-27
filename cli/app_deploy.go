@@ -7,6 +7,7 @@ import (
 	"github.com/func/func/cloudformation"
 )
 
+// Deploy deploys the resources in dir to a CloudFormation stack.
 func (a *App) Deploy(ctx context.Context, dir, stackName string) int {
 	tmpl, code := a.GenerateCloudFormation(ctx, dir)
 	if code != 0 {
@@ -55,7 +56,7 @@ func (a *App) Deploy(ctx context.Context, dir, stackName string) int {
 			return 1
 		case cloudformation.ResourceEvent:
 			name := e.LogicalID
-			if v, ok := tmpl.LookupResource(e.LogicalID); ok {
+			if v := tmpl.LookupResource(e.LogicalID); v != "" {
 				name = v
 			}
 			a.Logger.Verbosef("  %s: %s %s %s\n", name, e.Operation, e.State, e.Reason)

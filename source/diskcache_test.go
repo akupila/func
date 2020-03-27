@@ -43,7 +43,7 @@ func tempdir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		os.RemoveAll(dir)
+		_ = os.RemoveAll(dir)
 	})
 	return dir
 }

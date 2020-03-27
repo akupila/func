@@ -12,6 +12,8 @@ import (
 	"github.com/func/func/source"
 )
 
+// GenerateCloudFormation generates a CloudFormation template from the the
+// resources in the given directory.
 func (a *App) GenerateCloudFormation(ctx context.Context, dir string) (*cloudformation.Template, int) {
 	loader := &resource.Loader{
 		Registry: a.Registry,

@@ -11,6 +11,7 @@ import (
 type ArchiveFormat string
 
 const (
+	// Zip compresses the archive to a zip file.
 	Zip ArchiveFormat = "zip"
 )
 
