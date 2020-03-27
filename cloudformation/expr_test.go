@@ -223,12 +223,3 @@ func parseExprDiags(t *testing.T, input string) (hclsyntax.Expression, func(hcl.
 	}
 
 }
-
-func writeDiags(diags hcl.Diagnostics) string {
-	var buf bytes.Buffer
-	wr := hcl.NewDiagnosticTextWriter(&buf, nil, 0, true)
-	if err := wr.WriteDiagnostics(diags); err != nil {
-		panic(err)
-	}
-	return strings.TrimSpace(buf.String())
-}

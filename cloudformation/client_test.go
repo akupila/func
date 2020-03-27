@@ -358,61 +358,6 @@ func stripNumbers(input string) string {
 	return numRe.ReplaceAllString(input, "")
 }
 
-func old_TestClient_Events(t *testing.T) {
-	deployment := &Deployment{
-		ChangeSet: &ChangeSet{
-			Name:  "changeset-name",
-			Stack: &Stack{Name: "stack-name"},
-		},
-	}
-
-	ts := time.Now()
-	stackEvents := []cloudformation.StackEvent{
-		{
-			ClientRequestToken: aws.String(deployment.ChangeSet.Name),
-			ResourceType:       aws.String("AWS::CloudFormation::Stack"),
-			Timestamp:          aws.Time(ts),
-			ResourceStatus:     cloudformation.ResourceStatusUpdateComplete,
-		},
-	}
-
-	offset := 0
-	hook := func(input *cloudformation.DescribeStackEventsInput) (*cloudformation.DescribeStackEventsOutput, error) {
-		if offset >= len(stackEvents) {
-			return &cloudformation.DescribeStackEventsOutput{}, nil
-		}
-		from, to := offset, offset+1
-		offset++
-		return &cloudformation.DescribeStackEventsOutput{
-			StackEvents: stackEvents[from:to],
-		}, nil
-	}
-
-	cli := &Client{
-		api: &mockCF{
-			DescribeStackEvents: hook,
-		},
-	}
-
-	events := cli.Events(context.Background(), deployment)
-
-	var got []Event
-	for ev := range events {
-		got = append(got, ev)
-	}
-
-	want := []Event{
-		StackEvent{
-			Operation: StackUpdate,
-			State:     StateComplete,
-		},
-	}
-
-	if diff := cmp.Diff(got, want); diff != "" {
-		t.Errorf("Diff (-got +want)\n%s", diff)
-	}
-}
-
 func TestClient_Events(t *testing.T) {
 	var (
 		deploy = &Deployment{
@@ -538,18 +483,6 @@ func (ee mockEvents) Paginate(pageSize int) DescribeStackEventsHook {
 
 func compareTemplate() cmp.Option {
 	return cmpopts.IgnoreUnexported(Template{})
-}
-
-func ignoreFields(names ...string) cmp.Option {
-	return cmp.FilterPath(func(p cmp.Path) bool {
-		str := p.String()
-		for _, name := range names {
-			if str == name {
-				return true
-			}
-		}
-		return false
-	}, cmp.Ignore())
 }
 
 type CreateChangeSetHook func(input *cloudformation.CreateChangeSetInput) (*cloudformation.CreateChangeSetOutput, error)

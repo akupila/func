@@ -3,9 +3,6 @@ package cloudformation
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/func/func/resource"
@@ -316,25 +313,6 @@ func TestGenerate_noSource(t *testing.T) {
 	}}
 	if diff := cmp.Diff(diags, wantDiags); diff != "" {
 		t.Fatalf("Diff (-got +want):\n%s", diff)
-	}
-}
-
-func tempdir(t *testing.T) (string, func()) {
-	t.Helper()
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return dir, func() {
-		_ = os.RemoveAll(dir)
-	}
-}
-
-func writeFiles(t *testing.T, dir string, files map[string][]byte) {
-	for name, data := range files {
-		if err := ioutil.WriteFile(filepath.Join(dir, name), data, 0644); err != nil {
-			t.Fatal(err)
-		}
 	}
 }
 
