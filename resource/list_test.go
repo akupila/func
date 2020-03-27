@@ -123,7 +123,6 @@ func TestResource_SourceFiles(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func writeTestFiles(t *testing.T, files map[string][]byte) (string, func()) {

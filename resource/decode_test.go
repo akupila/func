@@ -147,7 +147,7 @@ resource "role" {
 								Effect:  "Allow",
 								Actions: []string{"sts:AssumeRole"},
 								Principals: map[string][]string{
-									"Service": []string{"lambda.amazonaws.com"},
+									"Service": {"lambda.amazonaws.com"},
 								},
 							}},
 						},
@@ -369,7 +369,7 @@ resource "func" {
 								Effect:  "Allow",
 								Actions: []string{"sts:AssumeRole"},
 								Principals: map[string][]string{
-									"Service": []string{"lambda.amazonaws.com"},
+									"Service": {"lambda.amazonaws.com"},
 								},
 							}},
 						},

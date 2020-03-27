@@ -86,11 +86,8 @@ func (a *App) GenerateCloudFormation(ctx context.Context, dir string) (*cloudfor
 			if file != nil {
 				a.Logger.Verbosef("%s: Source cached\n", res.Name)
 			} else {
-				// TODO: Build
-				for i := 0; i <= 20; i++ {
-					a.Logger.Infof("%s: Building %d%%\n", res.Name, i*5)
-					time.Sleep(100 * time.Millisecond)
-				}
+				a.Logger.Infof("%s: Building..\n", res.Name)
+				time.Sleep(1000 * time.Millisecond) // Fake timer for now
 
 				f, err := cache.Create(arc.FileName())
 				if err != nil {

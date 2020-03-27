@@ -431,7 +431,6 @@ func TestClient_Events(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func makeStackEvent(deploy *Deployment, status cloudformation.ResourceStatus) cloudformation.StackEvent {

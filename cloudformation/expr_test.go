@@ -221,5 +221,4 @@ func parseExprDiags(t *testing.T, input string) (hclsyntax.Expression, func(hcl.
 		}
 		return strings.TrimSpace(buf.String())
 	}
-
 }

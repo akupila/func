@@ -70,15 +70,15 @@ func (l *Logger) Logf(level LogLevel, format string, args ...interface{}) {
 	l.mu.Unlock()
 }
 
-func (r *Logger) Error(a ...interface{})                      { r.Log(Error, a...) }
-func (r *Logger) Errorln(a ...interface{})                    { r.Logln(Error, a...) }
-func (r *Logger) Errorf(format string, args ...interface{})   { r.Logf(Error, format, args...) }
-func (r *Logger) Info(a ...interface{})                       { r.Log(Info, a...) }
-func (r *Logger) Infoln(a ...interface{})                     { r.Logln(Info, a...) }
-func (r *Logger) Infof(format string, args ...interface{})    { r.Logf(Info, format, args...) }
-func (r *Logger) Verbose(a ...interface{})                    { r.Log(Verbose, a...) }
-func (r *Logger) Verboseln(a ...interface{})                  { r.Logln(Verbose, a...) }
-func (r *Logger) Verbosef(format string, args ...interface{}) { r.Logf(Verbose, format, args...) }
-func (r *Logger) Trace(a ...interface{})                      { r.Log(Trace, a...) }
-func (r *Logger) Traceln(a ...interface{})                    { r.Logln(Trace, a...) }
-func (r *Logger) Tracef(format string, args ...interface{})   { r.Logf(Trace, format, args...) }
+func (l *Logger) Error(a ...interface{})                      { l.Log(Error, a...) }
+func (l *Logger) Errorln(a ...interface{})                    { l.Logln(Error, a...) }
+func (l *Logger) Errorf(format string, args ...interface{})   { l.Logf(Error, format, args...) }
+func (l *Logger) Info(a ...interface{})                       { l.Log(Info, a...) }
+func (l *Logger) Infoln(a ...interface{})                     { l.Logln(Info, a...) }
+func (l *Logger) Infof(format string, args ...interface{})    { l.Logf(Info, format, args...) }
+func (l *Logger) Verbose(a ...interface{})                    { l.Log(Verbose, a...) }
+func (l *Logger) Verboseln(a ...interface{})                  { l.Logln(Verbose, a...) }
+func (l *Logger) Verbosef(format string, args ...interface{}) { l.Logf(Verbose, format, args...) }
+func (l *Logger) Trace(a ...interface{})                      { l.Log(Trace, a...) }
+func (l *Logger) Traceln(a ...interface{})                    { l.Logln(Trace, a...) }
+func (l *Logger) Tracef(format string, args ...interface{})   { l.Logf(Trace, format, args...) }

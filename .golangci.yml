@@ -1,0 +1,16 @@
+linters-settings:
+  maligned:
+    suggest-new: true
+  lll:
+    line-length: 140
+
+linters:
+  enable-all: true
+  disable:
+    - wsl
+    - gomnd
+    - scopelint
+    - dupl
+    - funlen
+    - gochecknoglobals
+    - gocognit

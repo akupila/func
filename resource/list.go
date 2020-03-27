@@ -36,7 +36,7 @@ func (l List) ByName(name string) *Resource {
 
 // OfType returns a new list of all resources that have a certain type.
 func (l List) OfType(typename string) List {
-	var out List
+	out := make(List, 0, len(l))
 	for _, r := range l {
 		if r.Type == typename {
 			out = append(out, r)
@@ -47,7 +47,7 @@ func (l List) OfType(typename string) List {
 
 // WithSource returns a list of resources that have source code.
 func (l List) WithSource() List {
-	var out List
+	out := make(List, 0, len(l))
 	for _, r := range l {
 		if r.SourceCode == nil {
 			continue
