@@ -41,33 +41,33 @@ func (l *Logger) printDeltaTime() {
 }
 
 func (l *Logger) Log(level LogLevel, a ...interface{}) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	if l == nil || l.out == nil || level > l.Level {
 		return
 	}
+	l.mu.Lock()
 	l.printDeltaTime()
 	fmt.Fprint(l.out, a...)
+	l.mu.Unlock()
 }
 
 func (l *Logger) Logln(level LogLevel, a ...interface{}) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	if l == nil || l.out == nil || level > l.Level {
 		return
 	}
+	l.mu.Lock()
 	l.printDeltaTime()
 	fmt.Fprintln(l.out, a...)
+	l.mu.Unlock()
 }
 
 func (l *Logger) Logf(level LogLevel, format string, args ...interface{}) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	if l == nil || l.out == nil || level > l.Level {
 		return
 	}
+	l.mu.Lock()
 	l.printDeltaTime()
 	fmt.Fprintf(l.out, format, args...)
+	l.mu.Unlock()
 }
 
 func (r *Logger) Error(a ...interface{})                      { r.Log(Error, a...) }
