@@ -20,7 +20,7 @@ func deployCommand() *cobra.Command {
 	flags.StringVar(&app.SourceS3Bucket, "source-bucket", "func-source", "S3 Bucket to use for source code")
 
 	stack := flags.StringP("stack", "s", "", "CloudFormation stack name")
-	cmd.MarkFlagRequired("stack")
+	_ = cmd.MarkFlagRequired("stack")
 
 	logLevel := flags.CountP("v", "v", "Log level")
 
