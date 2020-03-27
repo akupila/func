@@ -14,13 +14,17 @@ LDFLAGS += -X $(MODULE)/version.BuildDate=$(DATE)
 all: test build
 
 .PHONY: build
-build:
+build: generate
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/func .
 	@du -h $(BIN)/func
 
 .PHONY: install
-install:
+install: generate
 	go install -ldflags "$(LDFLAGS)"
+
+.PHONY: generate
+generate:
+	@go generate ./...
 
 .PHONY: clean
 clean:

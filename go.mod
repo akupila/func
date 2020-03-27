@@ -11,4 +11,5 @@ require (
 	github.com/spf13/cobra v0.0.6
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/zclconf/go-cty v1.2.0
+	golang.org/x/tools v0.0.0-20200326210457-5d86d385bf88
 )

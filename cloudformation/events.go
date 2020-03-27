@@ -72,7 +72,7 @@ func resourceEvent(ev cloudformation.StackEvent) ResourceEvent {
 // ResourceOperation is the operation that is being performed on a resource.
 type ResourceOperation int
 
-//go:generate stringer -type ResourceOperation -trimprefix Resource
+//go:generate go run golang.org/x/tools/cmd/stringer -type ResourceOperation -trimprefix Resource
 
 const (
 	ResourceCreate ResourceOperation = iota
@@ -101,7 +101,7 @@ func parseResourceOp(status cloudformation.ResourceStatus) ResourceOperation {
 // StackOperation is the operation that is being performed on a stack.
 type StackOperation int
 
-//go:generate stringer -type StackOperation -trimprefix Stack
+//go:generate go run golang.org/x/tools/cmd/stringer -type StackOperation -trimprefix Stack
 
 const (
 	StackCreate StackOperation = iota
@@ -139,7 +139,7 @@ func parseStackOp(status cloudformation.StackStatus) StackOperation {
 // State describes the state of a resource that is being deployed.
 type State int
 
-//go:generate stringer -type State -trimprefix State
+//go:generate go run golang.org/x/tools/cmd/stringer -type State -trimprefix State
 
 const (
 	StateInProgress State = iota
