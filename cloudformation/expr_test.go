@@ -75,7 +75,6 @@ func TestConvertExpr(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Logf("Expression type: %T", tc.expr)
 			got, diags := convertExpr(tc.expr, tc.configs)
 			if diags.HasErrors() {
 				t.Fatal(diags)

@@ -34,6 +34,10 @@ clean:
 test:
 	@go test ./...
 
+.PHONY: test-ci
+test-ci:
+	@go test -race -cover -v ./...
+
 .PHONY: lint
 lint:
 	@go run github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
