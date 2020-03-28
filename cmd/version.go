@@ -11,7 +11,8 @@ import (
 
 func versionCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "version",
+		Use:   "version",
+		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Fprintf(os.Stdout, "func\n")
 			fmt.Fprintf(os.Stdout, "  Version:    %s\n", version.Version)

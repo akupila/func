@@ -11,30 +11,28 @@ import (
 
 func deployCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "deploy",
+		Use:   "deploy",
+		Short: "Deploy CloudFormation stack",
 	}
 	flags := cmd.Flags()
 
-	app := cli.NewApp()
-
-	flags.StringVar(&app.SourceS3Bucket, "source-bucket", "func-source", "S3 Bucket to use for source code")
-
-	stack := flags.StringP("stack", "s", "", "CloudFormation stack name")
-	_ = cmd.MarkFlagRequired("stack")
-
 	logLevel := flags.CountP("v", "v", "Log level")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		app.Logger = cli.NewLogger(*logLevel)
+	var opts cli.DeploymentOpts
+	flags.StringVarP(&opts.StackName, "stack", "s", "", "CloudFormation stack name")
+	flags.StringVar(&opts.SourceBucket, "source-bucket", "", "S3 Bucket to use for source code")
 
+	cmd.Run = func(cmd *cobra.Command, args []string) {
 		dir, err := os.Getwd()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 
+		app := cli.NewApp(cli.LogLevel(*logLevel))
+
 		ctx := context.Background()
-		code := app.Deploy(ctx, dir, *stack)
+		code := app.DeployCloudFormation(ctx, dir, opts)
 		os.Exit(code)
 	}
 
