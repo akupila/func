@@ -2,6 +2,7 @@ package source
 
 import (
 	"archive/zip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,40 @@ import (
 type FileList struct {
 	Root  string   // Root directory.
 	Files []string // Files relative to root directory.
+}
+
+// Copy copies the files in the file list to the given directory.
+func (l FileList) Copy(dir string) error {
+	for _, f := range l.Files {
+		if err := copyFile(l.Root, f, dir); err != nil {
+			return fmt.Errorf("copy %s: %w", f, err)
+		}
+	}
+	return nil
+}
+
+func copyFile(root, filename, dir string) error {
+	fromPath := filepath.Join(root, filename)
+	toPath := filepath.Join(dir, filename)
+	if err := os.MkdirAll(filepath.Dir(toPath), 0755); err != nil {
+		return err
+	}
+	fromFile, err := os.Open(fromPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = fromFile.Close()
+	}()
+	toFile, err := os.Create(toPath)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(toFile, fromFile); err != nil {
+		_ = fromFile.Close()
+		return err
+	}
+	return fromFile.Close()
 }
 
 // Write writes the contents of all files to the given writer. The files are
