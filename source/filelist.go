@@ -2,8 +2,6 @@ package source
 
 import (
 	"archive/zip"
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
@@ -32,22 +30,24 @@ func (fl *FileList) Add(path string) {
 	fl.Files = append(fl.Files, path)
 }
 
-// Checksum computes a checksum of the contents of all the files.
-func (fl *FileList) Checksum() (string, error) {
-	s := sha256.New()
+// Write writes the contents of all files to the given writer. The files are
+// processed in a deterministic order.
+//
+// This can be used to hash the contents of all files.
+func (fl *FileList) Write(w io.Writer) error {
 	sort.Strings(fl.Files) // Ensure consistent order
 	for _, name := range fl.Files {
 		f, err := os.Open(filepath.Join(fl.Root, name))
 		if err != nil {
-			return "", err
+			return err
 		}
-		if _, err := io.Copy(s, f); err != nil {
+		if _, err := io.Copy(w, f); err != nil {
 			_ = f.Close()
-			return "", err
+			return err
 		}
 		_ = f.Close()
 	}
-	return hex.EncodeToString(s.Sum(nil)), nil
+	return nil
 }
 
 // Zip compresses the file list to a zip archive.

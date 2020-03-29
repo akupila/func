@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -73,11 +75,11 @@ func (a *App) sources(resources resource.List) (nameToSum map[string]string, sum
 		res := res
 		g.Go(func() error {
 			a.Verbosef("  %s: Computing source checksum\n", res.Name)
-			files := res.SourceCode
-			sum, err := files.Checksum()
-			if err != nil {
+			sha := sha256.New()
+			if err := res.SourceCode.Write(sha); err != nil {
 				return fmt.Errorf("  %s: compute source checksum: %v", res.Name, err)
 			}
+			sum := hex.EncodeToString(sha.Sum(nil))
 			a.Tracef("  %s: Source checksum = %s\n", res.Name, sum)
 			mu.Lock()
 			sums[res.Name] = sum

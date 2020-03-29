@@ -33,13 +33,15 @@ func TestFileList(t *testing.T) {
 		t.Errorf("Files do not match (-got +want)\n%s", diff)
 	}
 
-	gotSum, err := fl.Checksum()
+	var buf bytes.Buffer
+	err := fl.Write(&buf)
 	if err != nil {
 		t.Fatalf("Compute checksum: %v", err)
 	}
-	wantSum := "130b02b90cf45e7f465c717196aa4f706ab7a52901d22384d0b0562ca668598d"
-	if gotSum != wantSum {
-		t.Errorf("Checksum does not match\nGot  %q\nWant %q", gotSum, wantSum)
+	gotContent := buf.String()
+	wantContent := "barbazfoo"
+	if gotContent != wantContent {
+		t.Errorf("Written contenet does not match\nGot  %q\nWant %q", gotContent, wantContent)
 	}
 
 	zip := &bytes.Buffer{}
