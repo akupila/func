@@ -117,7 +117,7 @@ func TestResource_SourceFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			got := list.Files()
+			got := list.Files
 			if diff := cmp.Diff(got, tc.wantFiles); diff != "" {
 				t.Errorf("Diff (-got +want)\n%s", diff)
 			}

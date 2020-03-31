@@ -24,16 +24,13 @@ func TestFileList(t *testing.T) {
 	fl.Add("foo.txt")
 	fl.Add("bar/baz.txt")
 
-	gotFiles := fl.Files()
-	wantFiles := []string{"bar/baz.txt", "foo.txt"}
-	if diff := cmp.Diff(gotFiles, wantFiles); diff != "" {
-		t.Errorf("Files do not match (-got +want)\n%s", diff)
+	if diff := cmp.Diff(fl.Root, dir); diff != "" {
+		t.Errorf("Root does not match (-got +want)\n%s", diff)
 	}
 
-	gotSize := fl.Size()
-	wantSize := int64(9) // len(foo + barbaz)
-	if gotSize != wantSize {
-		t.Errorf("Size does not match, got %d, want %d", gotSize, wantSize)
+	wantFiles := []string{"foo.txt", "bar/baz.txt"}
+	if diff := cmp.Diff(fl.Files, wantFiles); diff != "" {
+		t.Errorf("Files do not match (-got +want)\n%s", diff)
 	}
 
 	gotSum, err := fl.Checksum()
