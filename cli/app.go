@@ -198,7 +198,7 @@ func reverseSums(sums map[string]string) map[string][]string {
 }
 
 // DeployCloudFormation deploys the project using CloudFormation.
-func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts DeploymentOpts) int {
+func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts DeploymentOpts) int { // nolint: gocyclo
 	if opts.StackName == "" {
 		a.Errorln("Stack name not set")
 		return 2
@@ -255,6 +255,37 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 				return nil
 			}
 
+			files := src.Files
+
+			if len(src.Build) > 0 {
+				tmp, err := ioutil.TempDir("", "func-build")
+				if err != nil {
+					return err
+				}
+				defer func() {
+					_ = os.RemoveAll(tmp)
+				}()
+
+				if err := files.Copy(tmp); err != nil {
+					return err
+				}
+
+				buildContext := &source.BuildContext{
+					Dir:    tmp,
+					Stdout: os.Stdout,
+					Stderr: os.Stderr,
+				}
+				if err := src.Build.Exec(ctx, buildContext); err != nil {
+					return err
+				}
+
+				output, err := source.Collect(tmp)
+				if err != nil {
+					return err
+				}
+				files = output
+			}
+
 			a.Verbosef("  %s: Creating source zip\n", name)
 			f, err := ioutil.TempFile("", key)
 			if err != nil {
@@ -264,7 +295,7 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 				_ = os.Remove(f.Name())
 			}()
 
-			if err := src.Files.Zip(f); err != nil {
+			if err := files.Zip(f); err != nil {
 				return fmt.Errorf("%s: zip: %w", name, err)
 			}
 			if err := f.Sync(); err != nil {
