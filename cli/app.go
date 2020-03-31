@@ -72,12 +72,8 @@ func (a *App) sources(resources resource.List) (nameToSum map[string]string, sum
 	for _, res := range sources {
 		res := res
 		g.Go(func() error {
-			a.Verbosef("  %s: Collecting source files\n", res.Name)
-			files, err := res.SourceFiles()
-			if err != nil {
-				return fmt.Errorf("  %s: collect source: %v", res.Name, err)
-			}
 			a.Verbosef("  %s: Computing source checksum\n", res.Name)
+			files := res.SourceCode
 			sum, err := files.Checksum()
 			if err != nil {
 				return fmt.Errorf("  %s: compute source checksum: %v", res.Name, err)

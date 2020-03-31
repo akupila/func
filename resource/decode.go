@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 
+	"github.com/func/func/source"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/ext/customdecode"
 	"github.com/hashicorp/hcl/v2/hcldec"
@@ -76,7 +77,7 @@ type decoder struct {
 type decoderResource struct {
 	Type       string
 	Definition hcl.Range
-	SourceCode *SourceCode
+	SourceCode *source.FileList
 	Config     cty.Value
 	Refs       []Reference
 	Input      cty.Type
@@ -164,17 +165,28 @@ func (d *decoder) DecodeResource(block *hcl.Block) (*decoderResource, hcl.Diagno
 		return nil, diags
 	}
 
-	var source *SourceCode
+	var src *source.FileList
 	if srcAttr := content.GetAttr("source"); !srcAttr.IsNull() {
-		filename := body.MissingItemRange().Filename
-		resourceDir := filepath.Dir(filename)
+		configAbs := body.MissingItemRange().Filename
+		configDir := filepath.Dir(configAbs)
+		configRel, _ := filepath.Rel(configDir, configAbs)
 		cont, _, _ := block.Body.PartialContent(hcldec.ImpliedSchema(spec["source"]))
-		rng := cont.Blocks[0].DefRange
-		dir := filepath.Join(resourceDir, srcAttr.GetAttr("dir").AsString())
-		source = &SourceCode{
-			Definition: rng,
-			Dir:        dir,
+		attrs, _ := cont.Blocks[0].Body.JustAttributes()
+		dir := filepath.Join(configDir, srcAttr.GetAttr("dir").AsString())
+		files, err := source.Collect(
+			dir,
+			source.ExcludeHidden(),
+			source.ExcludeFile(configRel),
+		)
+		if err != nil {
+			diags = append(diags, &hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Could not collect source files",
+				Detail:   fmt.Sprintf("Error: %v.", err),
+				Subject:  attrs["dir"].Range.Ptr(),
+			})
 		}
+		src = files
 	}
 
 	inputSpec := impliedSpec(cfg.Type())
@@ -187,7 +199,7 @@ func (d *decoder) DecodeResource(block *hcl.Block) (*decoderResource, hcl.Diagno
 	return &decoderResource{
 		Type:       typename,
 		Definition: block.DefRange,
-		SourceCode: source,
+		SourceCode: src,
 		Config:     config,
 		Input:      input,
 		Output:     output,

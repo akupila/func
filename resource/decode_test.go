@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/func/func/resource"
+	"github.com/func/func/source"
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclparse"
@@ -194,9 +195,13 @@ resource "func" {
 	role    = "testrole"
 
 	source {
-		dir = "./src"
+		dir = "."
 	}
 }
+
+-- .git/HEAD --
+-- index.js --
+module.exports = function() {}
 			`,
 			want: resource.List{
 				{
@@ -212,13 +217,9 @@ resource "func" {
 						Runtime: "nodejs10.x",
 						Role:    "testrole",
 					},
-					SourceCode: &resource.SourceCode{
-						Definition: hcl.Range{
-							Filename: "<DIR>/file.hcl",
-							Start:    hcl.Pos{Line: 7, Column: 2, Byte: 126},
-							End:      hcl.Pos{Line: 7, Column: 8, Byte: 132},
-						},
-						Dir: "<DIR>/src",
+					SourceCode: &source.FileList{
+						Root:  "<DIR>",
+						Files: []string{"index.js"},
 					},
 				},
 			},
@@ -237,6 +238,11 @@ resource "func" {
 		dir = "source"
 	}
 }
+
+-- a/b/c/README.md --
+# Test
+-- a/b/c/source/index.js --
+module.exports = function() {}
 			`,
 			want: resource.List{
 				{
@@ -252,13 +258,9 @@ resource "func" {
 						Runtime: "nodejs10.x",
 						Role:    "testrole",
 					},
-					SourceCode: &resource.SourceCode{
-						Definition: hcl.Range{
-							Filename: "<DIR>/a/b/c/foo.hcl",
-							Start:    hcl.Pos{Line: 7, Column: 2, Byte: 126},
-							End:      hcl.Pos{Line: 7, Column: 8, Byte: 132},
-						},
-						Dir: "<DIR>/a/b/c/source",
+					SourceCode: &source.FileList{
+						Root:  "<DIR>/a/b/c/source",
+						Files: []string{"index.js"},
 					},
 				},
 			},
