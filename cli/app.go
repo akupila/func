@@ -81,7 +81,7 @@ func (a *App) sources(resources resource.List) (nameToSum map[string]string, sum
 			a.Tracef("  %s: Source checksum = %s\n", res.Name, sum)
 			mu.Lock()
 			sums[res.Name] = sum
-			srcs[sum] = files
+			srcs[sum] = res.SourceCode
 			mu.Unlock()
 			return nil
 		})
