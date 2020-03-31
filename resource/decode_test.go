@@ -2,6 +2,9 @@ package resource_test
 
 import (
 	"bytes"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -9,23 +12,24 @@ import (
 	"github.com/func/func/resource"
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclparse"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
+	"golang.org/x/tools/txtar"
 )
 
 func TestDecoder_Decode(t *testing.T) {
 	tests := []struct {
 		name      string
-		filename  string
 		input     string
 		want      resource.List
 		wantDiags hcl.Diagnostics
 	}{
 		// Attributes
 		{
-			name:     "Attributes",
-			filename: "file.hcl",
+			name: "Attributes",
 			input: `
+-- file.hcl --
 resource "func" {
 	type        = "aws:lambda_function"
 	handler     = "index.handler"
@@ -39,9 +43,9 @@ resource "func" {
 					Name: "func",
 					Type: "aws:lambda_function",
 					Definition: hcl.Range{
-						Filename: "file.hcl",
-						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+						Filename: "<DIR>/file.hcl",
+						Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+						End:      hcl.Pos{Line: 1, Column: 16, Byte: 15},
 					},
 					Config: LambdaFunction{
 						Handler:    "index.handler",
@@ -55,9 +59,9 @@ resource "func" {
 
 		// Blocks
 		{
-			name:     "Block",
-			filename: "file.hcl",
+			name: "Block",
 			input: `
+-- file.hcl --
 resource "func" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -76,9 +80,9 @@ resource "func" {
 					Name: "func",
 					Type: "aws:lambda_function",
 					Definition: hcl.Range{
-						Filename: "file.hcl",
-						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+						Filename: "<DIR>/file.hcl",
+						Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+						End:      hcl.Pos{Line: 1, Column: 16, Byte: 15},
 					},
 					Config: LambdaFunction{
 						Handler: "index.handler",
@@ -94,9 +98,9 @@ resource "func" {
 			},
 		},
 		{
-			name:     "BlockMapList",
-			filename: "file.hcl",
+			name: "BlockMapList",
 			input: `
+-- file.hcl --
 resource "role" {
 	type = "aws:iam_role"
 
@@ -137,9 +141,9 @@ resource "role" {
 					Name: "role",
 					Type: "aws:iam_role",
 					Definition: hcl.Range{
-						Filename: "file.hcl",
-						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+						Filename: "<DIR>/file.hcl",
+						Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+						End:      hcl.Pos{Line: 1, Column: 16, Byte: 15},
 					},
 					Config: IAMRole{
 						AssumeRolePolicy: IAMPolicyDocument{
@@ -180,9 +184,9 @@ resource "role" {
 
 		// Source code
 		{
-			name:     "Source",
-			filename: "file.hcl",
+			name: "Source",
 			input: `
+-- file.hcl --
 resource "func" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -199,9 +203,9 @@ resource "func" {
 					Name: "func",
 					Type: "aws:lambda_function",
 					Definition: hcl.Range{
-						Filename: "file.hcl",
-						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+						Filename: "<DIR>/file.hcl",
+						Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+						End:      hcl.Pos{Line: 1, Column: 16, Byte: 15},
 					},
 					Config: LambdaFunction{
 						Handler: "index.handler",
@@ -210,19 +214,19 @@ resource "func" {
 					},
 					SourceCode: &resource.SourceCode{
 						Definition: hcl.Range{
-							Filename: "file.hcl",
-							Start:    hcl.Pos{Line: 8, Column: 2, Byte: 127},
-							End:      hcl.Pos{Line: 8, Column: 8, Byte: 133},
+							Filename: "<DIR>/file.hcl",
+							Start:    hcl.Pos{Line: 7, Column: 2, Byte: 126},
+							End:      hcl.Pos{Line: 7, Column: 8, Byte: 132},
 						},
-						Dir: "src",
+						Dir: "<DIR>/src",
 					},
 				},
 			},
 		},
 		{
-			name:     "SourceNested",
-			filename: "a/b/c/foo.hcl",
+			name: "SourceNested",
 			input: `
+-- a/b/c/foo.hcl --
 resource "func" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -239,9 +243,9 @@ resource "func" {
 					Name: "func",
 					Type: "aws:lambda_function",
 					Definition: hcl.Range{
-						Filename: "a/b/c/foo.hcl",
-						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+						Filename: "<DIR>/a/b/c/foo.hcl",
+						Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+						End:      hcl.Pos{Line: 1, Column: 16, Byte: 15},
 					},
 					Config: LambdaFunction{
 						Handler: "index.handler",
@@ -250,11 +254,11 @@ resource "func" {
 					},
 					SourceCode: &resource.SourceCode{
 						Definition: hcl.Range{
-							Filename: "a/b/c/foo.hcl",
-							Start:    hcl.Pos{Line: 8, Column: 2, Byte: 127},
-							End:      hcl.Pos{Line: 8, Column: 8, Byte: 133},
+							Filename: "<DIR>/a/b/c/foo.hcl",
+							Start:    hcl.Pos{Line: 7, Column: 2, Byte: 126},
+							End:      hcl.Pos{Line: 7, Column: 8, Byte: 132},
 						},
-						Dir: "a/b/c/source",
+						Dir: "<DIR>/a/b/c/source",
 					},
 				},
 			},
@@ -262,9 +266,9 @@ resource "func" {
 
 		// References
 		{
-			name:     "ReferenceToInput",
-			filename: "file.hcl",
+			name: "ReferenceToInput",
 			input: `
+-- a.hcl --
 resource "a" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -272,6 +276,7 @@ resource "a" {
 	role    = "testrole"
 }
 
+-- b.hcl --
 resource "b" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -284,9 +289,9 @@ resource "b" {
 					Name: "a",
 					Type: "aws:lambda_function",
 					Definition: hcl.Range{
-						Filename: "file.hcl",
-						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-						End:      hcl.Pos{Line: 2, Column: 13, Byte: 13},
+						Filename: "<DIR>/a.hcl",
+						Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+						End:      hcl.Pos{Line: 1, Column: 13, Byte: 12},
 					},
 					Config: LambdaFunction{
 						Handler: "index.handler",
@@ -298,9 +303,9 @@ resource "b" {
 					Name: "b",
 					Type: "aws:lambda_function",
 					Definition: hcl.Range{
-						Filename: "file.hcl",
-						Start:    hcl.Pos{Line: 9, Column: 1, Byte: 125},
-						End:      hcl.Pos{Line: 9, Column: 13, Byte: 137},
+						Filename: "<DIR>/b.hcl",
+						Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+						End:      hcl.Pos{Line: 1, Column: 13, Byte: 12},
 					},
 					Config: LambdaFunction{
 						Handler: "index.handler",
@@ -322,9 +327,9 @@ resource "b" {
 			},
 		},
 		{
-			name:     "ReferenceToOutput",
-			filename: "file.hcl",
+			name: "ReferenceToOutput",
 			input: `
+-- file.hcl --
 resource "role" {
 	type = "aws:iam_role"
 
@@ -359,9 +364,9 @@ resource "func" {
 					Name: "role",
 					Type: "aws:iam_role",
 					Definition: hcl.Range{
-						Filename: "file.hcl",
-						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+						Filename: "<DIR>/file.hcl",
+						Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+						End:      hcl.Pos{Line: 1, Column: 16, Byte: 15},
 					},
 					Config: IAMRole{
 						AssumeRolePolicy: IAMPolicyDocument{
@@ -387,9 +392,9 @@ resource "func" {
 					Name: "func",
 					Type: "aws:lambda_function",
 					Definition: hcl.Range{
-						Filename: "file.hcl",
-						Start:    hcl.Pos{Line: 24, Column: 1, Byte: 321},
-						End:      hcl.Pos{Line: 24, Column: 16, Byte: 336},
+						Filename: "<DIR>/file.hcl",
+						Start:    hcl.Pos{Line: 23, Column: 1, Byte: 320},
+						End:      hcl.Pos{Line: 23, Column: 16, Byte: 335},
 					},
 					Config: LambdaFunction{
 						Handler: "index.handler",
@@ -413,9 +418,9 @@ resource "func" {
 
 		// Conversion
 		{
-			name:     "ConvertNumberToString",
-			filename: "file.hcl",
+			name: "ConvertNumberToString",
 			input: `
+-- file.hcl --
 resource "func" {
 	type        = "aws:lambda_function"
 	handler     = "index.handler"
@@ -429,9 +434,9 @@ resource "func" {
 					Name: "func",
 					Type: "aws:lambda_function",
 					Definition: hcl.Range{
-						Filename: "file.hcl",
-						Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-						End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+						Filename: "<DIR>/file.hcl",
+						Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+						End:      hcl.Pos{Line: 1, Column: 16, Byte: 15},
 					},
 					Config: LambdaFunction{
 						Handler:     "index.handler",
@@ -445,9 +450,9 @@ resource "func" {
 				Severity: hcl.DiagWarning,
 				Summary:  "Value is converted from number to string",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 7, Column: 16, Byte: 156},
-					End:      hcl.Pos{Line: 7, Column: 21, Byte: 161},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 6, Column: 16, Byte: 155},
+					End:      hcl.Pos{Line: 6, Column: 21, Byte: 160},
 				},
 				Expression: &hclsyntax.LiteralValueExpr{
 					Val: cty.NumberIntVal(12345),
@@ -457,9 +462,9 @@ resource "func" {
 
 		// Errors
 		{
-			name:     "ErrTypeMissing",
-			filename: "file.hcl",
+			name: "ErrTypeMissing",
 			input: `
+-- file.hcl --
 resource "err" {
 	# No type
 }
@@ -469,16 +474,16 @@ resource "err" {
 				Summary:  "Missing required argument",
 				Detail:   "The argument \"type\" is required, but no definition was found.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 2, Column: 16, Byte: 16},
-					End:      hcl.Pos{Line: 2, Column: 16, Byte: 16},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 1, Column: 16, Byte: 15},
+					End:      hcl.Pos{Line: 1, Column: 16, Byte: 15},
 				},
 			}},
 		},
 		{
-			name:     "ErrTypeVariable",
-			filename: "file.hcl",
+			name: "ErrTypeVariable",
 			input: `
+-- file.hcl --
 resource "err" {
 	type = foo
 }
@@ -488,9 +493,9 @@ resource "err" {
 				Summary:  "Variables not allowed",
 				Detail:   "Variables may not be used here.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 3, Column: 9, Byte: 26},
-					End:      hcl.Pos{Line: 3, Column: 12, Byte: 29},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 2, Column: 9, Byte: 25},
+					End:      hcl.Pos{Line: 2, Column: 12, Byte: 28},
 				},
 				Expression: &hclsyntax.ScopeTraversalExpr{
 					Traversal: hcl.Traversal{
@@ -500,9 +505,9 @@ resource "err" {
 			}},
 		},
 		{
-			name:     "ErrTypeNotFound",
-			filename: "file.hcl",
+			name: "ErrTypeNotFound",
 			input: `
+-- file.hcl --
 resource "err" {
 	type = "invalid"
 }
@@ -512,16 +517,16 @@ resource "err" {
 				Summary:  "Unsupported resource",
 				Detail:   "Resources of type \"invalid\" are not supported.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 3, Column: 9, Byte: 26},
-					End:      hcl.Pos{Line: 3, Column: 18, Byte: 35},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 2, Column: 9, Byte: 25},
+					End:      hcl.Pos{Line: 2, Column: 18, Byte: 34},
 				},
 			}},
 		},
 		{
-			name:     "ErrTypeNotFoundSuggest",
-			filename: "file.hcl",
+			name: "ErrTypeNotFoundSuggest",
 			input: `
+-- file.hcl --
 resource "err" {
 	type = "aws/lambda-function"
 }
@@ -531,16 +536,16 @@ resource "err" {
 				Summary:  "Unsupported resource",
 				Detail:   "Resources of type \"aws/lambda-function\" are not supported. Did you mean \"aws:lambda_function\"?",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 3, Column: 9, Byte: 26},
-					End:      hcl.Pos{Line: 3, Column: 30, Byte: 47},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 2, Column: 9, Byte: 25},
+					End:      hcl.Pos{Line: 2, Column: 30, Byte: 46},
 				},
 			}},
 		},
 		{
-			name:     "ErrUnsupportedBlock",
-			filename: "file.hcl",
+			name: "ErrUnsupportedBlock",
 			input: `
+-- file.hcl --
 xxx {
 	type = ""
 }
@@ -550,16 +555,16 @@ xxx {
 				Summary:  "Unsupported block type",
 				Detail:   "Blocks of type \"xxx\" are not expected here.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 2, Column: 1, Byte: 1},
-					End:      hcl.Pos{Line: 2, Column: 4, Byte: 4},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+					End:      hcl.Pos{Line: 1, Column: 4, Byte: 3},
 				},
 			}},
 		},
 		{
-			name:     "ErrEmptyName",
-			filename: "file.hcl",
+			name: "ErrEmptyName",
 			input: `
+-- file.hcl --
 resource "" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -572,16 +577,16 @@ resource "" {
 				Summary:  "Resource name not set",
 				Detail:   "A resource name cannot be blank.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 2, Column: 10, Byte: 10},
-					End:      hcl.Pos{Line: 2, Column: 12, Byte: 12},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 1, Column: 10, Byte: 9},
+					End:      hcl.Pos{Line: 1, Column: 12, Byte: 11},
 				},
 			}},
 		},
 		{
-			name:     "ErrDuplicateResourceName",
-			filename: "file.hcl",
+			name: "ErrDuplicateResourceName",
 			input: `
+-- file.hcl --
 resource "func" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -599,18 +604,18 @@ resource "func" {
 			wantDiags: hcl.Diagnostics{{
 				Severity: hcl.DiagError,
 				Summary:  "Duplicate resource",
-				Detail:   "Another resource named \"func\" was defined in file.hcl on line 2.",
+				Detail:   "Another resource named \"func\" was defined in <DIR>/file.hcl on line 1.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 9, Column: 1, Byte: 123},
-					End:      hcl.Pos{Line: 9, Column: 16, Byte: 138},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 8, Column: 1, Byte: 122},
+					End:      hcl.Pos{Line: 8, Column: 16, Byte: 137},
 				},
 			}},
 		},
 		{
-			name:     "ErrRequiredAttributeNotSet",
-			filename: "file.hcl",
+			name: "ErrRequiredAttributeNotSet",
 			input: `
+-- file.hcl --
 resource "func" {
 	type = "aws:lambda_function"
 	handler = "index.handler"
@@ -622,16 +627,16 @@ resource "func" {
 				Summary:  "Missing required argument",
 				Detail:   "The argument \"role\" is required, but no definition was found.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 2, Column: 17, Byte: 17},
-					End:      hcl.Pos{Line: 2, Column: 17, Byte: 17},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 1, Column: 17, Byte: 16},
+					End:      hcl.Pos{Line: 1, Column: 17, Byte: 16},
 				},
 			}},
 		},
 		{
-			name:     "ErrRequiredBlockNotSet",
-			filename: "file.hcl",
+			name: "ErrRequiredBlockNotSet",
 			input: `
+-- file.hcl --
 resource "role" {
 	type = "aws:iam_role"
 }
@@ -641,16 +646,16 @@ resource "role" {
 				Summary:  "Missing assume_role_policy block",
 				Detail:   "A block of type \"assume_role_policy\" is required here.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 2, Column: 17, Byte: 17},
-					End:      hcl.Pos{Line: 2, Column: 17, Byte: 17},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 1, Column: 17, Byte: 16},
+					End:      hcl.Pos{Line: 1, Column: 17, Byte: 16},
 				},
 			}},
 		},
 		{
-			name:     "ErrTooManyBlocks", // Not targeting slice of structs
-			filename: "file.hcl",
+			name: "ErrTooManyBlocks", // Not targeting slice of structs
 			input: `
+-- file.hcl --
 resource "func" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -669,18 +674,18 @@ resource "func" {
 			wantDiags: hcl.Diagnostics{{
 				Severity: hcl.DiagError,
 				Summary:  "Duplicate environment block",
-				Detail:   "Only one block of type \"environment\" is allowed. Previous definition was at file.hcl:8,2-13.",
+				Detail:   "Only one block of type \"environment\" is allowed. Previous definition was at <DIR>/file.hcl:7,2-13.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 12, Column: 2, Byte: 147},
-					End:      hcl.Pos{Line: 12, Column: 13, Byte: 158},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 11, Column: 2, Byte: 146},
+					End:      hcl.Pos{Line: 11, Column: 13, Byte: 157},
 				},
 			}},
 		},
 		{
-			name:     "ErrTooFewBlocks",
-			filename: "file.hcl",
+			name: "ErrTooFewBlocks",
 			input: `
+-- file.hcl --
 resource "func" {
 	type = "min_blocks"
 
@@ -693,16 +698,16 @@ resource "func" {
 				Summary:  "Insufficient nested blocks",
 				Detail:   "At least 2 \"nested\" blocks are required.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 2, Column: 17, Byte: 17},
-					End:      hcl.Pos{Line: 2, Column: 17, Byte: 17},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 1, Column: 17, Byte: 16},
+					End:      hcl.Pos{Line: 1, Column: 17, Byte: 16},
 				},
 			}},
 		},
 		{
-			name:     "ErrTooManyBlocksSlice",
-			filename: "file.hcl",
+			name: "ErrTooManyBlocksSlice",
 			input: `
+-- file.hcl --
 resource "func" {
 	type = "max_blocks"
 
@@ -719,16 +724,16 @@ resource "func" {
 				Summary:  "Too many nested blocks",
 				Detail:   "No more than 2 \"nested\" blocks are allowed",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 9, Column: 9, Byte: 75},
-					End:      hcl.Pos{Line: 9, Column: 9, Byte: 75},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 8, Column: 9, Byte: 74},
+					End:      hcl.Pos{Line: 8, Column: 9, Byte: 74},
 				},
 			}},
 		},
 		{
-			name:     "ErrCountBlocksTooFew",
-			filename: "file.hcl",
+			name: "ErrCountBlocksTooFew",
 			input: `
+-- file.hcl --
 resource "a" {
 	type = "min_max_blocks"
 
@@ -741,16 +746,16 @@ resource "a" {
 				Summary:  "Insufficient nested blocks",
 				Detail:   "At least 2 \"nested\" blocks are required.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 2, Column: 14, Byte: 14},
-					End:      hcl.Pos{Line: 2, Column: 14, Byte: 14},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 1, Column: 14, Byte: 13},
+					End:      hcl.Pos{Line: 1, Column: 14, Byte: 13},
 				},
 			}},
 		},
 		{
-			name:     "ErrCountBlocksTooMany",
-			filename: "file.hcl",
+			name: "ErrCountBlocksTooMany",
 			input: `
+-- file.hcl --
 resource "a" {
 	type = "min_max_blocks"
 
@@ -769,16 +774,16 @@ resource "a" {
 				Summary:  "Too many nested blocks",
 				Detail:   "No more than 3 \"nested\" blocks are allowed",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 11, Column: 9, Byte: 89},
-					End:      hcl.Pos{Line: 11, Column: 9, Byte: 89},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 10, Column: 9, Byte: 88},
+					End:      hcl.Pos{Line: 10, Column: 9, Byte: 88},
 				},
 			}},
 		},
 		{
-			name:     "ErrExtraneousLabel",
-			filename: "file.hcl",
+			name: "ErrExtraneousLabel",
 			input: `
+-- file.hcl --
 resource "role" {
 	type = "aws:iam_role"
 
@@ -801,21 +806,21 @@ resource "role" {
 				Summary:  "Extraneous label for policy",
 				Detail:   "Only 1 labels (name) are expected for policy blocks.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 15, Column: 15, Byte: 224},
-					End:      hcl.Pos{Line: 15, Column: 20, Byte: 229},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 14, Column: 15, Byte: 223},
+					End:      hcl.Pos{Line: 14, Column: 20, Byte: 228},
 				},
 				Context: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 15, Column: 2, Byte: 211},
-					End:      hcl.Pos{Line: 15, Column: 22, Byte: 231},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 14, Column: 2, Byte: 210},
+					End:      hcl.Pos{Line: 14, Column: 22, Byte: 230},
 				},
 			}},
 		},
 		{
-			name:     "ErrConvert",
-			filename: "file.hcl",
+			name: "ErrConvert",
 			input: `
+-- file.hcl --
 resource "func" {
 	type        = "aws:lambda_function"
 	handler     = "index.handler"
@@ -840,17 +845,17 @@ resource "func" {
 				Summary:  "Incorrect attribute value type",
 				Detail:   "Inappropriate value for attribute: string required.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 5, Column: 16, Byte: 102},
-					End:      hcl.Pos{Line: 5, Column: 18, Byte: 104},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 4, Column: 16, Byte: 101},
+					End:      hcl.Pos{Line: 4, Column: 18, Byte: 103},
 				},
 				Expression: &hclsyntax.ObjectConsExpr{},
 			}},
 		},
 		{
-			name:     "ErrReferenceResource",
-			filename: "file.hcl",
+			name: "ErrReferenceResource",
 			input: `
+-- file.hcl --
 resource "a" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -870,16 +875,16 @@ resource "b" {
 				Summary:  "No such resource",
 				Detail:   "A resource named \"x\" has not been declared.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 13, Column: 12, Byte: 235},
-					End:      hcl.Pos{Line: 13, Column: 13, Byte: 236},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 12, Column: 12, Byte: 234},
+					End:      hcl.Pos{Line: 12, Column: 13, Byte: 235},
 				},
 			}},
 		},
 		{
-			name:     "ErrReferenceInvalid",
-			filename: "file.hcl",
+			name: "ErrReferenceInvalid",
 			input: `
+-- file.hcl --
 resource "a" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -899,16 +904,16 @@ resource "b" {
 				Summary:  "Invalid reference",
 				Detail:   "The resource \"a\" (aws:lambda_function) does not have such a field.",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 13, Column: 17, Byte: 252},
-					End:      hcl.Pos{Line: 13, Column: 22, Byte: 257},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 12, Column: 17, Byte: 251},
+					End:      hcl.Pos{Line: 12, Column: 22, Byte: 256},
 				},
 			}},
 		},
 		{
-			name:     "ErrReferenceInputNotSet",
-			filename: "file.hcl",
+			name: "ErrReferenceInputNotSet",
 			input: `
+-- file.hcl --
 resource "a" {
 	type    = "aws:lambda_function"
 	handler = "index.handler"
@@ -928,9 +933,9 @@ resource "b" {
 				Summary:  "Input value not set",
 				Detail:   "A value has not been set for this field in \"a\".",
 				Subject: &hcl.Range{
-					Filename: "file.hcl",
-					Start:    hcl.Pos{Line: 13, Column: 16, Byte: 251},
-					End:      hcl.Pos{Line: 13, Column: 29, Byte: 264},
+					Filename: "<DIR>/file.hcl",
+					Start:    hcl.Pos{Line: 12, Column: 16, Byte: 250},
+					End:      hcl.Pos{Line: 12, Column: 29, Byte: 263},
 				},
 			}},
 		},
@@ -938,7 +943,9 @@ resource "b" {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			body, writeDiags := parseBody(t, tc.filename, tc.input)
+			dir := tempdir(t)
+			writeTxtar(t, dir, tc.input)
+			body, writeDiags := parseConfig(t, dir)
 
 			reg := &resource.Registry{}
 			reg.Add("aws:lambda_function", reflect.TypeOf(LambdaFunction{}))
@@ -953,6 +960,11 @@ resource "b" {
 				cmp.Comparer(func(a, b hcl.TraverseAttr) bool { return a.Name == b.Name }),
 				cmp.Comparer(func(a, b hcl.TraverseIndex) bool { return a.Key.RawEquals(b.Key) }),
 				cmp.Comparer(func(a, b *hclsyntax.LiteralValueExpr) bool { return a.Val.RawEquals(b.Val) }),
+				cmp.Comparer(func(a, b string) bool {
+					a = strings.ReplaceAll(a, "<DIR>", dir)
+					b = strings.ReplaceAll(b, "<DIR>", dir)
+					return a == b
+				}),
 				cmp.FilterPath(func(p cmp.Path) bool {
 					switch p.Last().String() {
 					case ".SrcRange", ".OpenRange":
@@ -980,19 +992,64 @@ resource "b" {
 	}
 }
 
-func parseBody(t *testing.T, filename, input string) (hcl.Body, func(hcl.Diagnostics) string) {
+func tempdir(t *testing.T) string {
+	dir, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Helper()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
+func writeTxtar(t *testing.T, dir, input string) {
+	archive := txtar.Parse([]byte(input))
+	for _, f := range archive.Files {
+		filename := filepath.Join(dir, f.Name)
+		if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := ioutil.WriteFile(filename, f.Data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func parseConfig(t *testing.T, dir string) (hcl.Body, func(hcl.Diagnostics) string) {
 	t.Helper()
-	f, diags := hclsyntax.ParseConfig([]byte(input), filename, hcl.InitialPos)
-	if diags.HasErrors() {
-		t.Fatalf("Failed to parse test input:\n%s", diags.Error())
+
+	parser := hclparse.NewParser()
+	if err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Ext(info.Name()) != ".hcl" {
+			return nil
+		}
+		_, diags := parser.ParseHCLFile(path)
+		if diags.HasErrors() {
+			return diags
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 
-	return f.Body, func(diags hcl.Diagnostics) string {
+	files := parser.Files()
+	filelist := make([]*hcl.File, 0, len(files))
+	for _, f := range parser.Files() {
+		filelist = append(filelist, f)
+	}
+	body := hcl.MergeFiles(filelist)
+
+	return body, func(diags hcl.Diagnostics) string {
 		if len(diags) == 0 {
 			return "No diagnostics"
 		}
 		var buf bytes.Buffer
-		files := map[string]*hcl.File{filename: f}
 		wr := hcl.NewDiagnosticTextWriter(&buf, files, 0, true)
 		if err := wr.WriteDiagnostics(diags); err != nil {
 			t.Fatal(err)
