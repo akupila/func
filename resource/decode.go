@@ -77,7 +77,7 @@ type decoder struct {
 type decoderResource struct {
 	Type       string
 	Definition hcl.Range
-	SourceCode *source.FileList
+	SourceCode *source.Code
 	Config     cty.Value
 	Refs       []Reference
 	Input      cty.Type
@@ -137,6 +137,10 @@ func (d *decoder) DecodeResource(block *hcl.Block) (*decoderResource, hcl.Diagno
 					Type:     cty.String,
 					Required: true,
 				},
+				"build": &hcldec.AttrSpec{
+					Name: "build",
+					Type: cty.String,
+				},
 			},
 		},
 	}
@@ -165,14 +169,14 @@ func (d *decoder) DecodeResource(block *hcl.Block) (*decoderResource, hcl.Diagno
 		return nil, diags
 	}
 
-	var src *source.FileList
-	if srcAttr := content.GetAttr("source"); !srcAttr.IsNull() {
+	var src *source.Code
+	if srcBlock := content.GetAttr("source"); !srcBlock.IsNull() {
 		configAbs := body.MissingItemRange().Filename
 		configDir := filepath.Dir(configAbs)
 		configRel, _ := filepath.Rel(configDir, configAbs)
 		cont, _, _ := block.Body.PartialContent(hcldec.ImpliedSchema(spec["source"]))
 		attrs, _ := cont.Blocks[0].Body.JustAttributes()
-		dir := filepath.Join(configDir, srcAttr.GetAttr("dir").AsString())
+		dir := filepath.Join(configDir, srcBlock.GetAttr("dir").AsString())
 		files, err := source.Collect(
 			dir,
 			source.ExcludeHidden(),
@@ -186,7 +190,21 @@ func (d *decoder) DecodeResource(block *hcl.Block) (*decoderResource, hcl.Diagno
 				Subject:  attrs["dir"].Range.Ptr(),
 			})
 		}
-		src = files
+		src = &source.Code{
+			Files: files,
+		}
+		if buildAttr := srcBlock.GetAttr("build"); !buildAttr.IsNull() {
+			script, err := source.ParseBuildScript(buildAttr.AsString())
+			if err != nil {
+				diags = append(diags, &hcl.Diagnostic{
+					Severity: hcl.DiagError,
+					Summary:  "Invalid build script",
+					Detail:   fmt.Sprintf("Error: %v.", err),
+					Subject:  attrs["build"].Range.Ptr(),
+				})
+			}
+			src.Build = script
+		}
 	}
 
 	inputSpec := impliedSpec(cfg.Type())

@@ -217,9 +217,11 @@ module.exports = function() {}
 						Runtime: "nodejs10.x",
 						Role:    "testrole",
 					},
-					SourceCode: &source.FileList{
-						Root:  "<DIR>",
-						Files: []string{"index.js"},
+					SourceCode: &source.Code{
+						Files: &source.FileList{
+							Root:  "<DIR>",
+							Files: []string{"index.js"},
+						},
 					},
 				},
 			},
@@ -258,9 +260,64 @@ module.exports = function() {}
 						Runtime: "nodejs10.x",
 						Role:    "testrole",
 					},
-					SourceCode: &source.FileList{
-						Root:  "<DIR>/a/b/c/source",
-						Files: []string{"index.js"},
+					SourceCode: &source.Code{
+						Files: &source.FileList{
+							Root:  "<DIR>/a/b/c/source",
+							Files: []string{"index.js"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "SourceBuild",
+			input: `
+-- file.hcl --
+resource "func" {
+	type    = "aws:lambda_function"
+	handler = "test"
+	runtime = "go1.x"
+	role    = "testrole"
+
+	source {
+		dir   = "."
+        build = <<EOF
+          go build .
+          EOF
+	}
+}
+
+-- go.mod --
+module test
+-- main.go --
+package main
+func main() {}
+			`,
+			want: resource.List{
+				{
+					Name: "func",
+					Type: "aws:lambda_function",
+					Definition: hcl.Range{
+						Filename: "<DIR>/file.hcl",
+						Start:    hcl.Pos{Line: 1, Column: 1, Byte: 0},
+						End:      hcl.Pos{Line: 1, Column: 16, Byte: 15},
+					},
+					Config: LambdaFunction{
+						Handler: "test",
+						Runtime: "go1.x",
+						Role:    "testrole",
+					},
+					SourceCode: &source.Code{
+						Files: &source.FileList{
+							Root: "<DIR>",
+							Files: []string{
+								"go.mod",
+								"main.go",
+							},
+						},
+						Build: source.BuildScript{
+							"go build .",
+						},
 					},
 				},
 			},

@@ -14,7 +14,7 @@ type Resource struct {
 	Name       string
 	Type       string
 	Definition hcl.Range
-	SourceCode *source.FileList
+	SourceCode *source.Code
 	Config     interface{} // Shape depends on Type
 	Refs       []Reference
 }

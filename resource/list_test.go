@@ -57,8 +57,8 @@ func TestList_OfType(t *testing.T) {
 
 func TestList_WithSource(t *testing.T) {
 	foo := &Resource{Name: "Foo"}
-	bar := &Resource{Name: "Bar", SourceCode: &source.FileList{}}
-	baz := &Resource{Name: "Bar", SourceCode: &source.FileList{}}
+	bar := &Resource{Name: "Bar", SourceCode: &source.Code{}}
+	baz := &Resource{Name: "Bar", SourceCode: &source.Code{}}
 
 	list := List{foo, bar, baz}
 

@@ -2,8 +2,6 @@ package cli
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,21 +63,20 @@ func (a *App) loadResources(dir string) (resource.List, diagPrinter, hcl.Diagnos
 }
 
 // sources computes the checksum of all resources with source code.
-func (a *App) sources(resources resource.List) (nameToSum map[string]string, sumToFiles map[string]*source.FileList, err error) {
+func (a *App) sources(resources resource.List) (nameToSum map[string]string, sumToCode map[string]*source.Code, err error) {
 	sources := resources.WithSource()
 	var mu sync.Mutex
-	srcs := make(map[string]*source.FileList, len(sources))
+	srcs := make(map[string]*source.Code, len(sources))
 	sums := make(map[string]string, len(sources))
 	g, _ := errgroup.WithContext(context.Background())
 	for _, res := range sources {
 		res := res
 		g.Go(func() error {
 			a.Verbosef("  %s: Computing source checksum\n", res.Name)
-			sha := sha256.New()
-			if err := res.SourceCode.Write(sha); err != nil {
+			sum, err := res.SourceCode.Checksum()
+			if err != nil {
 				return fmt.Errorf("  %s: compute source checksum: %v", res.Name, err)
 			}
-			sum := hex.EncodeToString(sha.Sum(nil))
 			a.Tracef("  %s: Source checksum = %s\n", res.Name, sum)
 			mu.Lock()
 			sums[res.Name] = sum
@@ -267,7 +264,7 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 				_ = os.Remove(f.Name())
 			}()
 
-			if err := src.Zip(f); err != nil {
+			if err := src.Files.Zip(f); err != nil {
 				return fmt.Errorf("%s: zip: %w", name, err)
 			}
 			if err := f.Sync(); err != nil {
