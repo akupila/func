@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestFileList_Copy(t *testing.T) {
@@ -39,6 +41,22 @@ Bar
 		msg = strings.ReplaceAll(msg, src, "<src>")
 		msg = strings.ReplaceAll(msg, dst, "<dst>")
 		t.Fatalf("Diff: %v\n%s", err, msg)
+	}
+}
+
+func TestFileList_Absolute(t *testing.T) {
+	list := FileList{
+		Root:  "/users/testuser",
+		Files: []string{"foo.txt", "bar/bar.txt"},
+	}
+
+	got := list.Absolute()
+	want := []string{
+		"/users/testuser/foo.txt",
+		"/users/testuser/bar/bar.txt",
+	}
+	if diff := cmp.Diff(got, want); diff != "" {
+		t.Errorf("Diff (-got +want)\n%s", diff)
 	}
 }
 

@@ -49,6 +49,15 @@ func copyFile(root, filename, dir string) error {
 	return fromFile.Close()
 }
 
+// Absolute returns all paths in the file list as absolute paths.
+func (l FileList) Absolute() []string {
+	out := make([]string, len(l.Files))
+	for i, f := range l.Files {
+		out[i] = filepath.Join(l.Root, f)
+	}
+	return out
+}
+
 // Write writes the contents of all files to the given writer. The files are
 // processed in a deterministic order.
 //
