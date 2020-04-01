@@ -507,7 +507,7 @@ func (m *mockCF) req() *aws.Request {
 	return &aws.Request{
 		HTTPRequest:  &http.Request{URL: &url.URL{}, Header: make(http.Header)},
 		HTTPResponse: &http.Response{},
-		Retryer:      aws.NewDefaultRetryer(),
+		Retryer:      aws.NoOpRetryer{},
 	}
 }
 
