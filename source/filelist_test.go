@@ -5,75 +5,58 @@ import (
 	"bytes"
 	"encoding/hex"
 	"io/ioutil"
-	"os"
-	"path/filepath"
 	"testing"
-
-	"github.com/google/go-cmp/cmp"
 )
 
-func TestFileList(t *testing.T) {
-	files := map[string][]byte{
-		"foo.txt":     []byte("foo"),
-		"bar/baz.txt": []byte("barbaz"),
+func TestFileList_Write(t *testing.T) {
+	files := `
+-- foo.txt --
+Foo
+-- bar/baz.txt --
+Qux
+`
+	dir := tempdir(t)
+	writeTxtar(t, dir, files)
+	l := &FileList{
+		Root:  dir,
+		Files: []string{"foo.txt", "bar/baz.txt"},
 	}
-	dir, done := writeTestFiles(t, files)
-	defer done()
-
-	fl := NewFileList(dir)
-	fl.Add("foo.txt")
-	fl.Add("bar/baz.txt")
-
-	if diff := cmp.Diff(fl.Root, dir); diff != "" {
-		t.Errorf("Root does not match (-got +want)\n%s", diff)
+	var buf bytes.Buffer
+	if err := l.Write(&buf); err != nil {
+		t.Fatal(err)
 	}
+	got := buf.String()
+	want := "Qux\nFoo\n"
+	if got != want {
+		t.Errorf("Got %q, want %q", got, want)
+	}
+}
 
-	wantFiles := []string{"foo.txt", "bar/baz.txt"}
-	if diff := cmp.Diff(fl.Files, wantFiles); diff != "" {
-		t.Errorf("Files do not match (-got +want)\n%s", diff)
+func TestFileList_Zip(t *testing.T) {
+	files := `
+-- foo.txt --
+Foo
+-- bar/bar.txt --
+Bar
+`
+	dir := tempdir(t)
+	writeTxtar(t, dir, files)
+	l := &FileList{
+		Root:  dir,
+		Files: []string{"foo.txt", "bar/bar.txt"},
 	}
 
 	var buf bytes.Buffer
-	err := fl.Write(&buf)
-	if err != nil {
-		t.Fatalf("Compute checksum: %v", err)
-	}
-	gotContent := buf.String()
-	wantContent := "barbazfoo"
-	if gotContent != wantContent {
-		t.Errorf("Written contenet does not match\nGot  %q\nWant %q", gotContent, wantContent)
-	}
-
-	zip := &bytes.Buffer{}
-	if err := fl.Zip(zip); err != nil {
-		t.Fatalf("zip: %v", err)
-	}
-	checkZip(t, zip.Bytes(), files)
-}
-
-func writeTestFiles(t *testing.T, files map[string][]byte) (string, func()) {
-	t.Helper()
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
+	if err := l.Zip(&buf); err != nil {
 		t.Fatal(err)
 	}
-	for name, data := range files {
-		filename := filepath.Join(dir, name)
-		if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := ioutil.WriteFile(filename, data, 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return dir, func() {
-		_ = os.RemoveAll(dir)
-	}
-}
 
-func checkZip(t *testing.T, data []byte, want map[string][]byte) {
-	t.Helper()
-	zf, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	want := map[string][]byte{
+		"foo.txt":     []byte("Foo\n"),
+		"bar/bar.txt": []byte("Bar\n"),
+	}
+
+	zf, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if err != nil {
 		t.Fatal(err)
 	}
