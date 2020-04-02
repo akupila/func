@@ -378,7 +378,7 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 	for ev := range cf.Events(ctx, deployment) {
 		switch e := ev.(type) {
 		case cloudformation.ErrorEvent:
-			a.Errorf("Deployment error: %v", err)
+			a.Errorf("Deployment error: %v", e.Error)
 			return 1
 		case cloudformation.ResourceEvent:
 			name := tmpl.LookupResource(e.LogicalID)
