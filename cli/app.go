@@ -93,6 +93,80 @@ func (a *App) sources(resources resource.List) ([]sourcecode, error) {
 	return out, nil
 }
 
+func (a *App) ensureSource(ctx context.Context, src sourcecode, s3 *source.S3) error {
+	name := src.Resource
+	a.Verbosef("  %s: Checking if source exists\n", name)
+
+	exists, err := s3.Has(ctx, src.Key)
+	if err != nil {
+		return fmt.Errorf("%s: check existing source: %w", name, err)
+	}
+	if exists {
+		a.Verbosef("  %s: Source ok\n", name)
+		return nil
+	}
+
+	files := src.Source.Files
+
+	if len(src.Source.Build) > 0 {
+		tmp, err := ioutil.TempDir("", "func-build")
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_ = os.RemoveAll(tmp)
+		}()
+
+		if err := files.Copy(tmp); err != nil {
+			return err
+		}
+
+		buildContext := &source.BuildContext{
+			Dir:    tmp,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		}
+		if err := src.Source.Build.Exec(ctx, buildContext); err != nil {
+			return err
+		}
+
+		output, err := source.Collect(tmp)
+		if err != nil {
+			return err
+		}
+		files = output
+	}
+
+	a.Verbosef("  %s: Creating source zip\n", name)
+	f, err := ioutil.TempFile("", src.Key)
+	if err != nil {
+		return fmt.Errorf("%s: create source file: %w", name, err)
+	}
+	defer func() {
+		_ = os.Remove(f.Name())
+	}()
+
+	if err := files.Zip(f); err != nil {
+		return fmt.Errorf("%s: zip: %w", name, err)
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		return err
+	}
+
+	a.Infof("  %s: Uploading\n", name)
+
+	err = s3.Upload(ctx, src.Key, f)
+	if err != nil {
+		return fmt.Errorf("%s: upload: %w", name, err)
+	}
+
+	a.Verbosef("  %s: Upload complete\n", name)
+	return nil
+}
+
 func sourceLocations(sources []sourcecode, bucket string) map[string]cloudformation.S3Location {
 	out := make(map[string]cloudformation.S3Location, len(sources))
 	for _, src := range sources {
@@ -219,77 +293,7 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 	for _, src := range srcs {
 		src := src
 		g.Go(func() error {
-			name := src.Resource
-			a.Verbosef("  %s: Checking if source exists\n", name)
-
-			exists, err := s3.Has(ctx, src.Key)
-			if err != nil {
-				return fmt.Errorf("%s: check existing source: %w", name, err)
-			}
-			if exists {
-				a.Verbosef("  %s: Source ok\n", name)
-				return nil
-			}
-
-			files := src.Source.Files
-
-			if len(src.Source.Build) > 0 {
-				tmp, err := ioutil.TempDir("", "func-build")
-				if err != nil {
-					return err
-				}
-				defer func() {
-					_ = os.RemoveAll(tmp)
-				}()
-
-				if err := files.Copy(tmp); err != nil {
-					return err
-				}
-
-				buildContext := &source.BuildContext{
-					Dir:    tmp,
-					Stdout: os.Stdout,
-					Stderr: os.Stderr,
-				}
-				if err := src.Source.Build.Exec(ctx, buildContext); err != nil {
-					return err
-				}
-
-				output, err := source.Collect(tmp)
-				if err != nil {
-					return err
-				}
-				files = output
-			}
-
-			a.Verbosef("  %s: Creating source zip\n", name)
-			f, err := ioutil.TempFile("", src.Key)
-			if err != nil {
-				return fmt.Errorf("%s: create source file: %w", name, err)
-			}
-			defer func() {
-				_ = os.Remove(f.Name())
-			}()
-
-			if err := files.Zip(f); err != nil {
-				return fmt.Errorf("%s: zip: %w", name, err)
-			}
-			if err := f.Sync(); err != nil {
-				return err
-			}
-			if _, err := f.Seek(0, 0); err != nil {
-				return err
-			}
-
-			a.Infof("  %s: Uploading\n", name)
-
-			err = s3.Upload(ctx, src.Key, f)
-			if err != nil {
-				return fmt.Errorf("%s: upload: %w", name, err)
-			}
-
-			a.Verbosef("  %s: Upload complete\n", name)
-			return nil
+			return a.ensureSource(gctx, src, s3)
 		})
 	}
 
