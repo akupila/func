@@ -181,13 +181,14 @@ func sourceLocations(sources []sourcecode, bucket string) map[string]cloudformat
 // GenerateCloudFormationOpts contains options for generating a CloudFormation
 // template.
 type GenerateCloudFormationOpts struct {
-	Format       string
-	SourceBucket string
+	Format        string
+	SourceBucket  string
+	ProcessSource bool
 }
 
 // GenerateCloudFormation generates a CloudFormation template from the
 // resources in the given directory.
-func (a *App) GenerateCloudFormation(dir string, opts GenerateCloudFormationOpts) int {
+func (a *App) GenerateCloudFormation(ctx context.Context, dir string, opts GenerateCloudFormationOpts) int {
 	resources, printDiags, diags := a.loadResources(dir)
 	printDiags(diags)
 	if diags.HasErrors() {
@@ -202,6 +203,27 @@ func (a *App) GenerateCloudFormation(dir string, opts GenerateCloudFormationOpts
 	if len(srcs) > 0 && opts.SourceBucket == "" {
 		a.Errorln("Source bucket not set")
 		return 2
+	}
+
+	if opts.ProcessSource {
+		cfg, err := external.LoadDefaultAWSConfig()
+		if err != nil {
+			a.Errorf("Could not load aws config: %v\n", err)
+		}
+		s3 := source.NewS3(cfg, opts.SourceBucket)
+
+		g, gctx := errgroup.WithContext(ctx)
+		for _, src := range srcs {
+			src := src
+			g.Go(func() error {
+				return a.ensureSource(gctx, src, s3)
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			a.Errorf("Could not process source: %v", err)
+			return 1
+		}
 	}
 
 	locs := sourceLocations(srcs, opts.SourceBucket)
