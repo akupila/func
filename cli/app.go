@@ -8,9 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
-	"sort"
 	"strings"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws/external"
 	"github.com/func/func/cloudformation"
@@ -62,15 +60,18 @@ func (a *App) loadResources(dir string) (resource.List, diagPrinter, hcl.Diagnos
 	return list, printer, diags
 }
 
-// sources computes the checksum of all resources with source code.
-func (a *App) sources(resources resource.List) (nameToSum map[string]string, sumToCode map[string]*source.Code, err error) {
+type sourcecode struct {
+	Resource string
+	Source   *source.Code
+	Key      string
+}
+
+func (a *App) sources(resources resource.List) ([]sourcecode, error) {
 	sources := resources.WithSource()
-	var mu sync.Mutex
-	srcs := make(map[string]*source.Code, len(sources))
-	sums := make(map[string]string, len(sources))
+	out := make([]sourcecode, len(sources))
 	g, _ := errgroup.WithContext(context.Background())
-	for _, res := range sources {
-		res := res
+	for i, res := range sources {
+		i, res := i, res
 		g.Go(func() error {
 			a.Verbosef("  %s: Computing source checksum\n", res.Name)
 			sum, err := res.SourceCode.Checksum()
@@ -78,33 +79,26 @@ func (a *App) sources(resources resource.List) (nameToSum map[string]string, sum
 				return fmt.Errorf("  %s: compute source checksum: %v", res.Name, err)
 			}
 			a.Tracef("  %s: Source checksum = %s\n", res.Name, sum)
-			mu.Lock()
-			sums[res.Name] = sum
-			srcs[sum] = res.SourceCode
-			mu.Unlock()
+			out[i] = sourcecode{
+				Resource: res.Name,
+				Source:   res.SourceCode,
+				Key:      sum + ".zip",
+			}
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return sums, srcs, nil
+	return out, nil
 }
 
-func sourceKeys(checksums map[string]string, ext string) map[string]string {
-	out := make(map[string]string, len(checksums))
-	for name, sum := range checksums {
-		out[name] = sum + "." + ext
-	}
-	return out
-}
-
-func sourceLocations(checksums map[string]string, bucket string) map[string]cloudformation.S3Location {
-	out := make(map[string]cloudformation.S3Location, len(checksums))
-	for name, key := range checksums {
-		out[name] = cloudformation.S3Location{
+func sourceLocations(sources []sourcecode, bucket string) map[string]cloudformation.S3Location {
+	out := make(map[string]cloudformation.S3Location, len(sources))
+	for _, src := range sources {
+		out[src.Resource] = cloudformation.S3Location{
 			Bucket: bucket,
-			Key:    key,
+			Key:    src.Key,
 		}
 	}
 	return out
@@ -126,19 +120,17 @@ func (a *App) GenerateCloudFormation(dir string, opts GenerateCloudFormationOpts
 		return 1
 	}
 
-	sums, _, err := a.sources(resources)
+	srcs, err := a.sources(resources)
 	if err != nil {
 		a.Errorf("Could not collect source files: %v\n", err)
 		return 1
 	}
-	if len(sums) > 0 && opts.SourceBucket == "" {
+	if len(srcs) > 0 && opts.SourceBucket == "" {
 		a.Errorln("Source bucket not set")
 		return 2
 	}
 
-	keys := sourceKeys(sums, "zip")
-	locs := sourceLocations(keys, opts.SourceBucket)
-
+	locs := sourceLocations(srcs, opts.SourceBucket)
 	tmpl, diags := cloudformation.Generate(resources, locs)
 	printDiags(diags)
 	if diags.HasErrors() {
@@ -186,17 +178,6 @@ type DeploymentOpts struct {
 	SourceBucket string
 }
 
-func reverseSums(sums map[string]string) map[string][]string {
-	out := make(map[string][]string)
-	for name, sum := range sums {
-		out[sum] = append(out[sum], name)
-	}
-	for _, names := range out {
-		sort.Strings(names)
-	}
-	return out
-}
-
 // DeployCloudFormation deploys the project using CloudFormation.
 func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts DeploymentOpts) int { // nolint: gocyclo
 	if opts.StackName == "" {
@@ -212,18 +193,15 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 
 	a.Infoln("Processing source files")
 
-	sums, srcs, err := a.sources(resources)
+	srcs, err := a.sources(resources)
 	if err != nil {
 		a.Errorf("Could not collect source files: %v\n", err)
 		return 1
 	}
-	if len(sums) > 0 && opts.SourceBucket == "" {
+	if len(srcs) > 0 && opts.SourceBucket == "" {
 		a.Errorln("Source bucket not set")
 		return 2
 	}
-
-	keys := sourceKeys(sums, "zip")
-	sumToNames := reverseSums(sums)
 
 	cfg, err := external.LoadDefaultAWSConfig()
 	if err != nil {
@@ -238,15 +216,13 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 	g, gctx := errgroup.WithContext(ctx)
 
 	// 1/2: Process & upload source code
-	for sum, src := range srcs {
-		sum, src := sum, src
-		name := strings.Join(sumToNames[sum], ", ")
+	for _, src := range srcs {
+		src := src
 		g.Go(func() error {
+			name := src.Resource
 			a.Verbosef("  %s: Checking if source exists\n", name)
 
-			key := sum + ".zip"
-
-			exists, err := s3.Has(ctx, key)
+			exists, err := s3.Has(ctx, src.Key)
 			if err != nil {
 				return fmt.Errorf("%s: check existing source: %w", name, err)
 			}
@@ -255,9 +231,9 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 				return nil
 			}
 
-			files := src.Files
+			files := src.Source.Files
 
-			if len(src.Build) > 0 {
+			if len(src.Source.Build) > 0 {
 				tmp, err := ioutil.TempDir("", "func-build")
 				if err != nil {
 					return err
@@ -275,7 +251,7 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 					Stdout: os.Stdout,
 					Stderr: os.Stderr,
 				}
-				if err := src.Build.Exec(ctx, buildContext); err != nil {
+				if err := src.Source.Build.Exec(ctx, buildContext); err != nil {
 					return err
 				}
 
@@ -287,7 +263,7 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 			}
 
 			a.Verbosef("  %s: Creating source zip\n", name)
-			f, err := ioutil.TempFile("", key)
+			f, err := ioutil.TempFile("", src.Key)
 			if err != nil {
 				return fmt.Errorf("%s: create source file: %w", name, err)
 			}
@@ -307,7 +283,7 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 
 			a.Infof("  %s: Uploading\n", name)
 
-			err = s3.Upload(ctx, key, f)
+			err = s3.Upload(ctx, src.Key, f)
 			if err != nil {
 				return fmt.Errorf("%s: upload: %w", name, err)
 			}
@@ -319,7 +295,7 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 
 	a.Infoln("Generating CloudFormation template")
 
-	locs := sourceLocations(keys, opts.SourceBucket)
+	locs := sourceLocations(srcs, opts.SourceBucket)
 	tmpl, diags := cloudformation.Generate(resources, locs)
 	if diags.HasErrors() {
 		printDiags(diags)
