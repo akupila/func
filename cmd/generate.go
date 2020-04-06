@@ -30,7 +30,7 @@ func generateCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		app := cli.NewApp(cli.LogLevel(*logLevel))
+		app := cli.NewApp(*logLevel)
 
 		ctx := context.Background()
 		code := app.GenerateCloudFormation(ctx, dir, opts)

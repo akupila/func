@@ -29,7 +29,7 @@ func deployCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		app := cli.NewApp(cli.LogLevel(*logLevel))
+		app := cli.NewApp(*logLevel)
 
 		ctx := context.Background()
 		code := app.DeployCloudFormation(ctx, dir, opts)

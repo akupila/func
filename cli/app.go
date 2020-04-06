@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/external"
 	"github.com/func/func/cloudformation"
@@ -20,22 +21,38 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// A Logger is used for logging activity to the user.
+type Logger interface {
+	Errorf(format string, args ...interface{})
+	Warningf(format string, args ...interface{})
+	Infof(format string, args ...interface{})
+	Debugf(format string, args ...interface{})
+	Tracef(format string, args ...interface{})
+
+	Writer(level LogLevel) io.Writer
+}
+
+// PrefixLogger allows creating sub loggers with a prefix.
+type PrefixLogger interface {
+	Logger
+	WithPrefix(name string) PrefixLogger
+}
+
 // App encapsulates all cli business logic.
 type App struct {
-	*logger
+	Log    Logger
 	Stdout io.Writer
-	Stderr io.Writer
 }
 
 // NewApp creates a new App with the given log level.
-func NewApp(logLevel LogLevel) *App {
+func NewApp(verbosity int) *App {
+	logger := &StdLogger{
+		Output: os.Stderr,
+		Level:  LogLevel(verbosity),
+	}
 	return &App{
-		logger: &logger{
-			Level:  logLevel,
-			Output: os.Stderr,
-		},
+		Log:    logger,
 		Stdout: os.Stdout,
-		Stderr: os.Stderr,
 	}
 }
 
@@ -50,13 +67,14 @@ func (a *App) loadResources(dir string) (resource.List, diagPrinter, hcl.Diagnos
 		Registry: reg,
 	}
 
-	a.Verbosef("Loading config from %s\n", dir)
+	a.Log.Debugf("Loading config from %s", dir)
 
 	list, diags := loader.LoadDir(dir)
 	printer := func(diags hcl.Diagnostics) {
-		loader.PrintDiagnostics(a.Stderr, diags)
+		out := a.Log.Writer(allLevels)
+		loader.PrintDiagnostics(out, diags)
 	}
-	a.Tracef("Loaded %d resources\n", len(list))
+	a.Log.Tracef("Loaded %d resources", len(list))
 	return list, printer, diags
 }
 
@@ -73,12 +91,16 @@ func (a *App) sources(resources resource.List) ([]sourcecode, error) {
 	for i, res := range sources {
 		i, res := i, res
 		g.Go(func() error {
-			a.Verbosef("  %s: Computing source checksum\n", res.Name)
+			log := a.Log
+			if pfx, ok := log.(PrefixLogger); ok {
+				log = pfx.WithPrefix(fmt.Sprintf("  [%s] ", res.Name))
+			}
+			log.Tracef("Computing source checksum")
 			sum, err := res.SourceCode.Checksum()
 			if err != nil {
-				return fmt.Errorf("  %s: compute source checksum: %v", res.Name, err)
+				return fmt.Errorf("%s: compute source checksum: %v", res.Name, err)
 			}
-			a.Tracef("  %s: Source checksum = %s\n", res.Name, sum)
+			log.Tracef("Source checksum = %s", sum)
 			out[i] = sourcecode{
 				Resource: res.Name,
 				Source:   res.SourceCode,
@@ -94,60 +116,86 @@ func (a *App) sources(resources resource.List) ([]sourcecode, error) {
 }
 
 func (a *App) ensureSource(ctx context.Context, src sourcecode, s3 *source.S3) error {
-	name := src.Resource
-	a.Verbosef("  %s: Checking if source exists\n", name)
+	log := a.Log
+	if pfx, ok := log.(PrefixLogger); ok {
+		log = pfx.WithPrefix(fmt.Sprintf("  %s ", src.Resource))
+	}
+	log.Tracef("Checking if source exists")
 
 	exists, err := s3.Has(ctx, src.Key)
 	if err != nil {
-		return fmt.Errorf("%s: check existing source: %w", name, err)
+		return fmt.Errorf("check existing source: %w", err)
 	}
 	if exists {
-		a.Verbosef("  %s: Source ok\n", name)
+		log.Tracef("Source ok")
 		return nil
 	}
 
 	files := src.Source.Files
 
 	if len(src.Source.Build) > 0 {
-		tmp, err := ioutil.TempDir("", "func-build")
+		log.Infof("Building")
+		buildDir, err := ioutil.TempDir("", "func-build")
 		if err != nil {
 			return err
 		}
+		log.Tracef("Build dir: %s", buildDir)
 		defer func() {
-			_ = os.RemoveAll(tmp)
+			log.Tracef("Removing temporary build dir %s", buildDir)
+			_ = os.RemoveAll(buildDir)
 		}()
-
-		if err := files.Copy(tmp); err != nil {
+		log.Tracef("Copying source %d files to build dir", len(files.Files))
+		if err := files.Copy(buildDir); err != nil {
 			return err
 		}
 
-		buildContext := &source.BuildContext{
-			Dir:    tmp,
-			Stdout: os.Stdout,
-			Stderr: os.Stderr,
-		}
-		if err := src.Source.Build.Exec(ctx, buildContext); err != nil {
-			return err
-		}
+		log.Tracef("Executing build")
 
-		output, err := source.Collect(tmp)
+		buildTime := time.Now()
+		n := len(src.Source.Build)
+		for i, s := range src.Source.Build {
+			line, stdout, stderr := log, log, log
+			if pfx, ok := line.(PrefixLogger); ok {
+				indexPrefix := pfx.WithPrefix(fmt.Sprintf("  %d/%d ", i+1, n))
+				line = indexPrefix
+				stdout = indexPrefix.WithPrefix("| ")
+				stderr = indexPrefix.WithPrefix("| ")
+			}
+			buildContext := &source.BuildContext{
+				Dir:    buildDir,
+				Stdout: stdout.Writer(Info),
+				Stderr: stderr.Writer(allLevels),
+			}
+			line.Debugf("$ %s", s)
+			stepTime := time.Now()
+			if err := s.Exec(ctx, buildContext); err != nil {
+				return fmt.Errorf("exec step %d: %s: %w", i, s, err)
+			}
+			line.Tracef("Done in %s", time.Since(stepTime).Round(time.Millisecond))
+		}
+		log.Debugf("Build completed in %s", time.Since(buildTime).Round(time.Millisecond))
+
+		log.Tracef("Collecting build artifacts")
+		output, err := source.Collect(buildDir)
 		if err != nil {
 			return err
 		}
+		log.Tracef("Got %d build artifacts", len(output.Files))
 		files = output
 	}
 
-	a.Verbosef("  %s: Creating source zip\n", name)
-	f, err := ioutil.TempFile("", src.Key)
+	log.Debugf("Creating source zip")
+	zipfile := strings.Replace(src.Key, ".", "-*.", 1)
+	f, err := ioutil.TempFile("", zipfile)
 	if err != nil {
-		return fmt.Errorf("%s: create source file: %w", name, err)
+		return fmt.Errorf("create source file: %w", err)
 	}
 	defer func() {
 		_ = os.Remove(f.Name())
 	}()
 
 	if err := files.Zip(f); err != nil {
-		return fmt.Errorf("%s: zip: %w", name, err)
+		return fmt.Errorf("zip: %w", err)
 	}
 	if err := f.Sync(); err != nil {
 		return err
@@ -156,14 +204,12 @@ func (a *App) ensureSource(ctx context.Context, src sourcecode, s3 *source.S3) e
 		return err
 	}
 
-	a.Infof("  %s: Uploading\n", name)
-
+	log.Infof("Uploading")
 	err = s3.Upload(ctx, src.Key, f)
 	if err != nil {
-		return fmt.Errorf("%s: upload: %w", name, err)
+		return fmt.Errorf("upload: %w", err)
 	}
-
-	a.Verbosef("  %s: Upload complete\n", name)
+	log.Debugf("Upload complete")
 	return nil
 }
 
@@ -197,18 +243,18 @@ func (a *App) GenerateCloudFormation(ctx context.Context, dir string, opts Gener
 
 	srcs, err := a.sources(resources)
 	if err != nil {
-		a.Errorf("Could not collect source files: %v\n", err)
+		a.Log.Errorf("Could not collect source files: %v", err)
 		return 1
 	}
 	if len(srcs) > 0 && opts.SourceBucket == "" {
-		a.Errorln("Source bucket not set")
+		a.Log.Errorf("Source bucket not set")
 		return 2
 	}
 
 	if opts.ProcessSource {
 		cfg, err := external.LoadDefaultAWSConfig()
 		if err != nil {
-			a.Errorf("Could not load aws config: %v\n", err)
+			a.Log.Errorf("Could not load aws config: %v", err)
 		}
 		s3 := source.NewS3(cfg, opts.SourceBucket)
 
@@ -216,12 +262,15 @@ func (a *App) GenerateCloudFormation(ctx context.Context, dir string, opts Gener
 		for _, src := range srcs {
 			src := src
 			g.Go(func() error {
-				return a.ensureSource(gctx, src, s3)
+				if err := a.ensureSource(gctx, src, s3); err != nil {
+					return fmt.Errorf("%s: %w", src.Resource, err)
+				}
+				return nil
 			})
 		}
 
 		if err := g.Wait(); err != nil {
-			a.Errorf("Could not process source: %v", err)
+			a.Log.Errorf("Could not process source: %v", err)
 			return 1
 		}
 	}
@@ -233,37 +282,30 @@ func (a *App) GenerateCloudFormation(ctx context.Context, dir string, opts Gener
 		os.Exit(1)
 	}
 
+	var out []byte
 	switch strings.ToLower(opts.Format) {
 	case "json":
-		out, err := json.MarshalIndent(tmpl, "", "    ")
-		if err != nil {
-			a.Errorln(err)
-			return 1
-		}
-		fmt.Fprintln(a.Stdout, string(out))
+		out, err = json.MarshalIndent(tmpl, "", "    ")
 	case "json-compact":
-		out, err := json.Marshal(tmpl)
-		if err != nil {
-			a.Errorln(err)
-			return 1
-		}
-		fmt.Fprintln(a.Stdout, string(out))
+		out, err = json.Marshal(tmpl)
 	case "yaml", "yml":
-		j, err := json.Marshal(tmpl)
-		if err != nil {
-			a.Errorln(err)
-			return 1
+		out, err = json.Marshal(tmpl)
+		if err == nil {
+			out, err = yaml.JSONToYAML(out)
 		}
-		y, err := yaml.JSONToYAML(j)
-		if err != nil {
-			a.Errorln(err)
-			return 1
-		}
-		fmt.Fprint(a.Stdout, string(y)) // Output already has trailing newline
 	default:
-		a.Errorf("Unsupported output format %q. Supported: [json, json-compact, yaml, yml]", opts.Format)
+		a.Log.Errorf("Unsupported output format %q. Supported: [json, json-compact, yaml, yml]", opts.Format)
 		return 2
 	}
+	if err != nil {
+		a.Log.Errorf(err.Error())
+		return 1
+	}
+	outstr := string(out)
+	if !strings.HasSuffix(outstr, "\n") {
+		outstr += "\n"
+	}
+	fmt.Fprint(a.Stdout, outstr)
 	return 0
 }
 
@@ -275,9 +317,9 @@ type DeploymentOpts struct {
 }
 
 // DeployCloudFormation deploys the project using CloudFormation.
-func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts DeploymentOpts) int { // nolint: gocyclo
+func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts DeploymentOpts) int {
 	if opts.StackName == "" {
-		a.Errorln("Stack name not set")
+		a.Log.Errorf("Stack name not set")
 		return 2
 	}
 
@@ -287,21 +329,21 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 		return 1
 	}
 
-	a.Infoln("Processing source files")
+	a.Log.Debugf("Processing source files")
 
 	srcs, err := a.sources(resources)
 	if err != nil {
-		a.Errorf("Could not collect source files: %v\n", err)
+		a.Log.Errorf("Could not collect source files: %v", err)
 		return 1
 	}
 	if len(srcs) > 0 && opts.SourceBucket == "" {
-		a.Errorln("Source bucket not set")
+		a.Log.Errorf("Source bucket not set")
 		return 2
 	}
 
 	cfg, err := external.LoadDefaultAWSConfig()
 	if err != nil {
-		a.Errorf("Could not load aws config: %v\n", err)
+		a.Log.Errorf("Could not load aws config: %v", err)
 	}
 	cf := cloudformation.NewClient(cfg)
 	s3 := source.NewS3(cfg, opts.SourceBucket)
@@ -315,11 +357,14 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 	for _, src := range srcs {
 		src := src
 		g.Go(func() error {
-			return a.ensureSource(gctx, src, s3)
+			if err := a.ensureSource(gctx, src, s3); err != nil {
+				return fmt.Errorf("%s: %w", src.Resource, err)
+			}
+			return nil
 		})
 	}
 
-	a.Infoln("Generating CloudFormation template")
+	a.Log.Debugf("Generating CloudFormation template")
 
 	locs := sourceLocations(srcs, opts.SourceBucket)
 	tmpl, diags := cloudformation.Generate(resources, locs)
@@ -331,71 +376,79 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 	// 2/2: Change set
 	var changeset *cloudformation.ChangeSet
 	g.Go(func() error {
-		a.Infoln("Creating CloudFormation change set")
+		a.Log.Debugf("Creating CloudFormation change set")
 
-		a.Verboseln("Getting CloudFormation stack")
+		a.Log.Tracef("Getting CloudFormation stack")
 		stack, err := cf.StackByName(gctx, opts.StackName)
 		if err != nil {
 			return fmt.Errorf("get stack: %w", err)
 		}
 		if stack.ID == "" {
-			a.Traceln("Stack does not exist")
+			a.Log.Tracef("Stack does not exist")
 		} else {
-			a.Tracef("Got CloudFormation stack: %s\n", stack.ID)
+			a.Log.Tracef("Got CloudFormation stack: %s", stack.ID)
 		}
 
 		cs, err := cf.CreateChangeSet(gctx, stack, tmpl)
 		if err != nil {
 			return fmt.Errorf("create change set: %w", err)
 		}
-		a.Tracef("Created CloudFormation change set %s\n", cs.ID)
+		a.Log.Tracef("Created CloudFormation change set %s\n", cs.ID)
 		changeset = cs
 
 		return nil
 	})
 
 	if err := g.Wait(); err != nil {
-		a.Errorln(err)
+		a.Log.Errorf("Error: %v", err)
 		return 1
 	}
 
 	if len(changeset.Changes) == 0 {
-		a.Infoln("No changes")
+		a.Log.Infof("No changes")
 		if err := cf.DeleteChangeSet(ctx, changeset); err != nil {
 			// Safe to ignore
-			a.Errorf("Error cleaning up change set: %v\n", err)
+			a.Log.Errorf("Error cleaning up change set: %v\n", err)
 			return 3
 		}
 		return 0
 	}
 
-	a.Verboseln("Deploying")
+	a.Log.Debugf("Deploying")
 
 	deployment, err := cf.ExecuteChangeSet(ctx, changeset)
 	if err != nil {
-		a.Errorf("Could not execute change set: %v", err)
+		a.Log.Errorf("Could not execute change set: %v", err)
 		return 1
 	}
 
 	for ev := range cf.Events(ctx, deployment) {
 		switch e := ev.(type) {
 		case cloudformation.ErrorEvent:
-			a.Errorf("Deployment error: %v", e.Error)
+			a.Log.Errorf("Deployment error: %v", e.Error)
 			return 1
 		case cloudformation.ResourceEvent:
 			name := tmpl.LookupResource(e.LogicalID)
-			a.Verbosef("  %s: %s %s %s\n", name, e.Operation, e.State, e.Reason)
+			if name == "" {
+				// No mapping for resources that are being deleted
+				name = e.LogicalID
+			}
+			line := a.Log
+			if pfx, ok := line.(PrefixLogger); ok {
+				line = pfx.WithPrefix(fmt.Sprintf("  [%s] ", name))
+			}
+			line.Debugf("%s %s %s", e.Operation, e.State, e.Reason)
 		case cloudformation.StackEvent:
 			if e.State == cloudformation.StateComplete {
 				if e.Operation == cloudformation.StackRollback {
-					a.Errorf("Deployment failed: %s\n", e.Reason)
+					a.Log.Errorf("Deployment failed: %s", e.Reason)
 					return 1
 				}
 			}
 		}
 	}
 
-	a.Infoln("Done")
+	a.Log.Infof("Done")
 
 	return 0
 }

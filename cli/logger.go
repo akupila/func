@@ -3,8 +3,8 @@ package cli
 import (
 	"fmt"
 	"io"
-	"sync"
-	"time"
+	"io/ioutil"
+	"strings"
 )
 
 // LogLevel defines the log level to use.
@@ -12,68 +12,75 @@ type LogLevel int
 
 // Log levels:
 const (
-	Error LogLevel = iota
-	Info
-	Verbose
+	Info LogLevel = iota
+	Debug
 	Trace
 )
 
-// logger writes user-facing log messages.
-type logger struct {
-	Level LogLevel
+var allLevels LogLevel = -1
 
-	mu     sync.Mutex
+// StdLogger is a logger that writes to the given output without ANSI movement
+// escape codes.
+type StdLogger struct {
 	Output io.Writer
+	Level  LogLevel
 }
 
-var startTime = time.Now()
-
-func (l *logger) printDeltaTime() {
-	d := time.Since(startTime)
-	sec := int(d.Seconds())
-	ms := int(d.Milliseconds()) % 1000
-	fmt.Fprintf(l.Output, "%d.%03d ", sec, ms)
-}
-
-func (l *logger) log(level LogLevel, a ...interface{}) {
-	if l == nil || l.Output == nil || level > l.Level {
+func (l *StdLogger) output(level LogLevel, format string, args []interface{}) {
+	if l.Level < level {
 		return
 	}
-	l.mu.Lock()
-	l.printDeltaTime()
-	fmt.Fprint(l.Output, a...)
-	l.mu.Unlock()
-}
-
-func (l *logger) logln(level LogLevel, a ...interface{}) {
-	if l == nil || l.Output == nil || level > l.Level {
-		return
+	msg := fmt.Sprintf(format, args...)
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
 	}
-	l.mu.Lock()
-	l.printDeltaTime()
-	fmt.Fprintln(l.Output, a...)
-	l.mu.Unlock()
-}
-
-func (l *logger) logf(level LogLevel, format string, args ...interface{}) {
-	if l == nil || l.Output == nil || level > l.Level {
-		return
+	if _, err := fmt.Fprint(l.Output, msg); err != nil {
+		panic(err)
 	}
-	l.mu.Lock()
-	l.printDeltaTime()
-	fmt.Fprintf(l.Output, format, args...)
-	l.mu.Unlock()
 }
 
-func (l *logger) Error(a ...interface{})                      { l.log(Error, a...) }
-func (l *logger) Errorln(a ...interface{})                    { l.logln(Error, a...) }
-func (l *logger) Errorf(format string, args ...interface{})   { l.logf(Error, format, args...) }
-func (l *logger) Info(a ...interface{})                       { l.log(Info, a...) }
-func (l *logger) Infoln(a ...interface{})                     { l.logln(Info, a...) }
-func (l *logger) Infof(format string, args ...interface{})    { l.logf(Info, format, args...) }
-func (l *logger) Verbose(a ...interface{})                    { l.log(Verbose, a...) }
-func (l *logger) Verboseln(a ...interface{})                  { l.logln(Verbose, a...) }
-func (l *logger) Verbosef(format string, args ...interface{}) { l.logf(Verbose, format, args...) }
-func (l *logger) Trace(a ...interface{})                      { l.log(Trace, a...) }
-func (l *logger) Traceln(a ...interface{})                    { l.logln(Trace, a...) }
-func (l *logger) Tracef(format string, args ...interface{})   { l.logf(Trace, format, args...) }
+// Errorf writes an error level log message.
+func (l *StdLogger) Errorf(format string, args ...interface{}) { l.output(allLevels, format, args) }
+
+// Warningf writes a warning level log message.
+func (l *StdLogger) Warningf(format string, args ...interface{}) { l.output(allLevels, format, args) }
+
+// Infof writes an info level log message.
+func (l *StdLogger) Infof(format string, args ...interface{}) { l.output(Info, format, args) }
+
+// Debugf writes a debug level log message.
+func (l *StdLogger) Debugf(format string, args ...interface{}) { l.output(Debug, format, args) }
+
+// Tracef writes a trace level log message.
+func (l *StdLogger) Tracef(format string, args ...interface{}) { l.output(Trace, format, args) }
+
+// WithPrefix creates a new logger that prefixes every log line with the given
+// prefix. In case the output is already prefixed, the parent prefix appears
+// first in the output.
+func (l *StdLogger) WithPrefix(prefix string) PrefixLogger {
+	out := l.Output
+	for {
+		pw, ok := out.(*PrefixWriter)
+		if !ok {
+			break
+		}
+		out = pw.Output
+		prefix = string(pw.Prefix) + prefix
+	}
+	return &StdLogger{
+		Level: l.Level,
+		Output: &PrefixWriter{
+			Output: out,
+			Prefix: []byte(prefix),
+		},
+	}
+}
+
+// Writer returns an io.Writer for the given log level. If the log level is not
+// exceeded, any data written is discarded.
+func (l *StdLogger) Writer(level LogLevel) io.Writer {
+	if l.Level < level {
+		return ioutil.Discard
+	}
+	return l.Output
+}
