@@ -30,8 +30,14 @@ func ParseBuildScript(str string) (BuildScript, error) {
 			continue
 		}
 		parts := strings.Split(line, " ")
-		if _, err := exec.LookPath(parts[0]); err != nil {
-			return nil, fmt.Errorf("line %d: %w", i, err)
+		for _, part := range parts {
+			if strings.Contains(part, "=") {
+				continue
+			}
+			if _, err := exec.LookPath(part); err != nil {
+				return nil, fmt.Errorf("line %d: %w", i, err)
+			}
+			break
 		}
 		out = append(out, BuildStep(line))
 	}

@@ -55,6 +55,13 @@ func TestParseBuildScript(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:  "EnvVar",
+			input: "FOO=bar echo $FOO",
+			want: BuildScript{
+				"FOO=bar echo $FOO",
+			},
+		},
+		{
 			name:  "Empty",
 			input: "",
 			want:  nil,
