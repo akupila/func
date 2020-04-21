@@ -15,8 +15,7 @@ func generateCommand() *cobra.Command {
 		Short: "Generate CloudFormation template",
 	}
 	flags := cmd.Flags()
-
-	logLevel := flags.CountP("v", "v", "Log level")
+	verbose := flags.Bool("verbose", false, "Enable verbose output")
 
 	var opts cli.GenerateCloudFormationOpts
 	flags.StringVarP(&opts.Format, "format", "f", "yaml", "Output format")
@@ -30,7 +29,7 @@ func generateCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		app := cli.NewApp(*logLevel)
+		app := cli.NewApp(*verbose)
 
 		ctx := context.Background()
 		code := app.GenerateCloudFormation(ctx, dir, opts)

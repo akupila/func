@@ -10,6 +10,7 @@ require (
 	github.com/google/go-cmp v0.4.0
 	github.com/hashicorp/hcl/v2 v2.3.0
 	github.com/mattn/go-runewidth v0.0.9
+	github.com/mitchellh/go-wordwrap v0.0.0-20150314170334-ad45545899c7
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/smartystreets/assertions v1.0.0 // indirect
 	github.com/spf13/cobra v0.0.6

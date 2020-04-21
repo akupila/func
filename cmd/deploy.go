@@ -15,8 +15,7 @@ func deployCommand() *cobra.Command {
 		Short: "Deploy CloudFormation stack",
 	}
 	flags := cmd.Flags()
-
-	logLevel := flags.CountP("v", "v", "Log level")
+	verbose := flags.Bool("verbose", false, "Enable verbose output")
 
 	var opts cli.DeploymentOpts
 	flags.StringVarP(&opts.StackName, "stack", "s", "", "CloudFormation stack name")
@@ -29,7 +28,7 @@ func deployCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		app := cli.NewApp(*logLevel)
+		app := cli.NewApp(*verbose)
 
 		ctx := context.Background()
 		code := app.DeployCloudFormation(ctx, dir, opts)

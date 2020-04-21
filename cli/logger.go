@@ -3,84 +3,244 @@ package cli
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/func/func/ui"
+	"github.com/hashicorp/hcl/v2"
+	"github.com/mattn/go-runewidth"
 )
 
-// LogLevel defines the log level to use.
-type LogLevel int
-
-// Log levels:
-const (
-	Info LogLevel = iota
-	Debug
-	Trace
-)
-
-var allLevels LogLevel = -1
-
-// StdLogger is a logger that writes to the given output without ANSI movement
-// escape codes.
-type StdLogger struct {
-	Output io.Writer
-	Level  LogLevel
+type logger struct {
+	Verbose bool
+	ui.Stack
 }
 
-func (l *StdLogger) output(level LogLevel, format string, args []interface{}) {
-	if l.Level < level {
+func newLogger(out io.Writer, verbose bool) *logger {
+	log := &logger{
+		Verbose: verbose,
+	}
+	ui := ui.New(out, log)
+
+	go func() {
+		for {
+			ui.Render()
+			time.Sleep(time.Second / 60)
+		}
+	}()
+
+	return log
+}
+
+func (l *logger) Infof(format string, args ...interface{}) {
+	str := fmt.Sprintf(format, args...)
+	l.Stack.Push(infoMsg(str))
+}
+
+func (l *logger) Verbosef(format string, args ...interface{}) {
+	if !l.Verbose {
 		return
 	}
-	msg := fmt.Sprintf(format, args...)
-	if !strings.HasSuffix(msg, "\n") {
-		msg += "\n"
-	}
-	if _, err := fmt.Fprint(l.Output, msg); err != nil {
-		panic(err)
+	str := fmt.Sprintf(format, args...)
+	str = ui.Format(str, ui.Dim)
+	l.Stack.Push(verboseMsg(str))
+}
+
+func (l *logger) Errorf(format string, args ...interface{}) {
+	str := fmt.Sprintf(format, args...)
+	l.Stack.Push(errorMsg(str))
+}
+
+func (l *logger) Render(frame ui.Frame) string {
+	padLeft := 2
+	frame.Width -= padLeft
+	return ui.Pad(
+		l.Stack.Render(frame),
+		ui.Padding{Top: 1, Bottom: 1, Left: padLeft},
+	)
+}
+
+func (l *logger) Step(name string) *logStep {
+	s := newStep(name, l.Verbose)
+	s.Icon = true
+	l.Stack.Push(s)
+	return s
+}
+
+type logStep struct { // nolint: maligned
+	ui.Stack
+
+	Name    string
+	Verbose bool
+	Icon    bool
+	Prefix  string
+
+	mu      sync.Mutex
+	started time.Time
+	stopped *time.Time
+	err     bool
+}
+
+func newStep(name string, verbose bool) *logStep {
+	return &logStep{
+		Name:    name,
+		Verbose: verbose,
+		started: time.Now(),
 	}
 }
 
-// Errorf writes an error level log message.
-func (l *StdLogger) Errorf(format string, args ...interface{}) { l.output(allLevels, format, args) }
+var (
+	iconWidth = 2
+	iconErr   = ui.Format(runewidth.FillRight("❌", iconWidth), ui.Red)
+	iconDone  = ui.Format(runewidth.FillRight("✅", iconWidth), ui.Green)
+)
 
-// Warningf writes a warning level log message.
-func (l *StdLogger) Warningf(format string, args ...interface{}) { l.output(allLevels, format, args) }
+func (s *logStep) Render(f ui.Frame) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-// Infof writes an info level log message.
-func (l *StdLogger) Infof(format string, args ...interface{}) { l.output(Info, format, args) }
+	cols := make([]string, 0, 3)
 
-// Debugf writes a debug level log message.
-func (l *StdLogger) Debugf(format string, args ...interface{}) { l.output(Debug, format, args) }
-
-// Tracef writes a trace level log message.
-func (l *StdLogger) Tracef(format string, args ...interface{}) { l.output(Trace, format, args) }
-
-// WithPrefix creates a new logger that prefixes every log line with the given
-// prefix. In case the output is already prefixed, the parent prefix appears
-// first in the output.
-func (l *StdLogger) WithPrefix(prefix string) PrefixLogger {
-	out := l.Output
-	for {
-		pw, ok := out.(*PrefixWriter)
-		if !ok {
-			break
+	prefix := s.Prefix
+	indent := ui.StringWidth(prefix)
+	if s.Icon {
+		switch {
+		case s.err:
+			cols = append(cols, iconErr)
+		case s.stopped != nil:
+			cols = append(cols, iconDone)
+		default:
+			var spinner string
+			if time.Since(s.started) > 250*time.Millisecond {
+				spinner = ui.Format(lineIndicator(f), ui.Green, ui.Dim)
+			} else {
+				spinner = ""
+			}
+			cols = append(cols, ui.PadRight(spinner, iconWidth))
 		}
-		out = pw.Output
-		prefix = string(pw.Prefix) + prefix
+
+		indent += iconWidth + 1
+		prefix = ui.PadRight(prefix, indent)
 	}
-	return &StdLogger{
-		Level: l.Level,
-		Output: &PrefixWriter{
-			Output: out,
-			Prefix: []byte(prefix),
-		},
+	f.Width -= indent
+
+	name := ui.Format(s.Name, ui.Bold)
+	cols = append(cols, name)
+
+	if s.stopped != nil {
+		d := s.stopped.Sub(s.started)
+		cols = append(cols, durStr(d))
+	} else if !s.err {
+		d := time.Since(s.started).Truncate(time.Second)
+		cols = append(cols, durStr(d))
+	}
+
+	str := ui.Rows(
+		ui.Cols(cols...),
+		ui.Prefix(
+			s.Stack.Render(f),
+			prefix,
+		),
+	)
+	return str
+}
+
+func durStr(d time.Duration) string {
+	switch {
+	case d < 100*time.Millisecond:
+		return ""
+	case d > 10*time.Second:
+		d = d.Round(100 * time.Millisecond)
+	case d > time.Second:
+		d = d.Round(10 * time.Millisecond)
+	default:
+		d = d.Round(time.Millisecond)
+	}
+	return ui.Format("("+d.String()+")", ui.Dim)
+}
+
+func (s *logStep) Done() {
+	s.mu.Lock()
+	now := time.Now()
+	s.stopped = &now
+	s.mu.Unlock()
+}
+
+func (s *logStep) Step(name string) *logStep {
+	sub := newStep(name, s.Verbose)
+	sub.Prefix = "  "
+	s.Stack.Push(sub)
+	return sub
+}
+
+func (s *logStep) Infof(format string, args ...interface{}) {
+	str := fmt.Sprintf(format, args...)
+	s.Stack.Push(infoMsg(str))
+}
+
+func (s *logStep) Verbosef(format string, args ...interface{}) {
+	if !s.Verbose {
+		return
+	}
+	str := fmt.Sprintf(format, args...)
+	str = ui.Format(str, ui.Dim)
+	s.Stack.Push(verboseMsg(str))
+}
+
+func (s *logStep) Errorf(format string, args ...interface{}) {
+	str := fmt.Sprintf(format, args...)
+	s.Stack.Push(errorMsg(str))
+	s.mu.Lock()
+	s.err = true
+	s.mu.Unlock()
+}
+
+type infoMsg string
+
+func (msg infoMsg) Render(f ui.Frame) string {
+	return string(msg)
+}
+
+type verboseMsg string
+
+func (msg verboseMsg) Render(f ui.Frame) string {
+	return ui.Format(string(msg), ui.Dim)
+}
+
+type errorMsg string
+
+func (msg errorMsg) Render(f ui.Frame) string {
+	return ui.Format("Error", ui.Red, ui.Bold) + ": " + string(msg)
+}
+
+func (s *logStep) PrintDiags(diags hcl.Diagnostics, files map[string]*hcl.File) {
+	for _, d := range diags {
+		s.Stack.Push(diagnostic{
+			Diagnostic:  d,
+			File:        files[d.Subject.Filename],
+			ExtendLines: 3,
+		})
+	}
+	if diags.HasErrors() {
+		s.mu.Lock()
+		s.err = true
+		s.mu.Unlock()
 	}
 }
 
-// Writer returns an io.Writer for the given log level. If the log level is not
-// exceeded, any data written is discarded.
-func (l *StdLogger) Writer(level LogLevel) io.Writer {
-	if l.Level < level {
-		return ioutil.Discard
+type window struct {
+	strings.Builder
+	MaxLines int
+}
+
+func (w *window) Render(f ui.Frame) string {
+	raw := strings.TrimSpace(w.String())
+	lines := strings.Split(raw, "\n")
+	to := len(lines) - 1
+	from := to - w.MaxLines
+	if from < 0 {
+		from = 0
 	}
-	return l.Output
+	return ui.Format(strings.Join(lines[from:to], "\n"), ui.Dim)
 }

@@ -1,8 +1,6 @@
 package resource
 
 import (
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -53,12 +51,7 @@ func (l *Loader) LoadDir(dir string) (List, hcl.Diagnostics) {
 	return g, diags
 }
 
-// PrintDiagnostics writes human readable diagnostics that were produced from
-// loading resources.
-func (l *Loader) PrintDiagnostics(w io.Writer, diags hcl.Diagnostics) {
-	wr := hcl.NewDiagnosticTextWriter(w, l.parser.Files(), 0, true)
-	err := wr.WriteDiagnostics(diags)
-	if err != nil {
-		fmt.Fprintln(w, err)
-	}
+// Files returns all the loaded files, keyed by file name.
+func (l *Loader) Files() map[string]*hcl.File {
+	return l.parser.Files()
 }
