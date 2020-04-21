@@ -28,7 +28,7 @@ func NewClient(config aws.Config) *Client {
 	return &Client{
 		api:               cloudformation.New(config),
 		changeSetWaitTime: 250 * time.Millisecond,
-		pollEvents:        100 * time.Millisecond,
+		pollEvents:        500 * time.Millisecond,
 	}
 }
 
