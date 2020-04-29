@@ -474,7 +474,9 @@ func (a *App) DeployCloudFormation(ctx context.Context, dir string, opts Deploym
 		case cloudformation.StackEvent:
 			if e.State == cloudformation.StateComplete {
 				if e.Operation == cloudformation.StackRollback {
-					step.Errorf("Deployment failed: %s", e.Reason)
+					if e.Reason != "" {
+						step.Errorf("Deployment failed: %s", e.Reason)
+					}
 					return 1
 				}
 			}
