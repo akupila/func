@@ -25,7 +25,7 @@ func TestConvertExpr(t *testing.T) {
 				}{},
 			},
 			expr: parseExpr(t, "a.id"),
-			want: `{"Fn::Ref": "A"}`,
+			want: `{"Ref": "A"}`,
 		},
 		{
 			name: "InputRef",
@@ -35,7 +35,7 @@ func TestConvertExpr(t *testing.T) {
 				}{},
 			},
 			expr: parseExpr(t, "a.name"),
-			want: `{"Fn::Ref": "A"}`,
+			want: `{"Ref": "A"}`,
 		},
 		{
 			name: "Att",

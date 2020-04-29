@@ -16,7 +16,7 @@ import (
 type exprKind string
 
 const (
-	exprRef exprKind = "Fn::Ref"
+	exprRef exprKind = "Ref"
 	exprAtt exprKind = "Fn::GetAtt"
 	exprSub exprKind = "Fn::Sub"
 	exprLit exprKind = "literal"

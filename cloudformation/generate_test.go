@@ -155,7 +155,7 @@ func TestGenerate_references(t *testing.T) {
 				"Type": "test:b",
 				"Properties": {
 					"In1": {
-						"Fn::Ref": "A"
+						"Ref": "A"
 					},
 					"In2": {
 						"Fn::GetAtt": "A.Out2"
