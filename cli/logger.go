@@ -199,19 +199,21 @@ func (s *logStep) Errorf(format string, args ...interface{}) {
 type infoMsg string
 
 func (msg infoMsg) Render(f ui.Frame) string {
-	return string(msg)
+	return ui.Wrap(string(msg), f.Width-8)
 }
 
 type verboseMsg string
 
 func (msg verboseMsg) Render(f ui.Frame) string {
-	return ui.Format(string(msg), ui.Dim)
+	m := ui.Wrap(string(msg), f.Width-8)
+	return ui.Format(m, ui.Dim)
 }
 
 type errorMsg string
 
 func (msg errorMsg) Render(f ui.Frame) string {
-	return ui.Format("Error", ui.Red, ui.Bold) + ": " + string(msg)
+	m := ui.Wrap(string(msg), f.Width-8)
+	return ui.Format("Error", ui.Red, ui.Bold) + ": " + m
 }
 
 func (s *logStep) PrintDiags(diags hcl.Diagnostics, files map[string]*hcl.File) {
