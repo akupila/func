@@ -208,8 +208,6 @@ func (r *uploadReader) ReadAt(p []byte, off int64) (int, error) {
 
 	r.read += int64(n)
 
-	time.Sleep(50 * time.Millisecond)
-
 	// Data appears to be read twice, possibly for signing the request
 	percent := float64(r.read-r.Size) / float64(r.Size)
 	r.Progress.SetProgress(percent)
