@@ -1,0 +1,253 @@
+services:
+  ApiGatewayV2:
+    resources:
+      Api:
+        name: API
+        fields:
+          ApiKeySelectionExpression:
+            name: KeySelection
+          CorsConfiguration:
+            name: CORS
+          ProtocolType:
+            name: Protocol
+          ApiId:
+            name: ID
+            cloudformation: Id,ref
+          ApiEndpoint:
+            name: Endpoint
+          CreatedDate:
+            name: Created
+      Authorizer:
+        fields:
+          ApiId:
+            name: API
+          AuthorizerCredentialsArn:
+            name: CredentialsARN
+          AuthorizerResultTtlInSeconds:
+            name: ResultTTL
+          AuthorizerType:
+            name: Type
+          AuthorizerUri:
+            name: URI
+          IdentityValidationExpression:
+            name: IdentifyValidation
+          JwtConfiguration:
+            name: JWT
+          AuthorizerId:
+            name: ID
+      Deployment:
+        fields:
+          ApiId:
+            name: API
+          CreatedDate:
+            name: Created
+          DeploymentId:
+            name: ID
+          DeploymentStatus:
+            name: Status
+          DeploymentStatusMessage:
+            name: StatusMessage
+      DomainName:
+        name: Domain
+        fields:
+          DomainName:
+            name: Name
+            cloudformation: DomainName
+          DomainNameConfigurations:
+            name: Config
+          DomainNameConfigurations.ApiGatewayDomainName:
+            name: DomainName
+          ApiMappingSelectionExpression:
+            name: Mapping
+      Integration:
+        fields:
+          ApiId:
+            name: API
+          ContentHandlingStrategy:
+            name: ContentHandling
+          TimeoutInMillis:
+            name: Timeout
+          TlsConfig:
+            name: TLS
+          TlsConfig.ServerNameToVerify:
+            name: ServerName
+          IntegrationId:
+            name: ID
+      IntegrationResponse:
+        fields:
+          ApiId:
+            name: API
+          ContentHandlingStrategy:
+            name: ContentHandling
+          IntegrationId:
+            name: Integration
+          IntegrationResponseKey:
+            name: ResponseKey
+          TemplateSelectionExpression:
+            name: TemplateSelection
+          IntegrationResponseId:
+            name: ID
+      ApiMapping:
+        name: Mapping
+        fields:
+          ApiId:
+            name: API
+          ApiMappingKey:
+            name: Key
+          ApiMappingId:
+            name: ID
+      Model:
+        fields:
+          ApiId:
+            name: API
+          ModelId:
+            name: ID
+      Route:
+        fields:
+          ApiId:
+            name: API
+          AuthorizerId:
+            name: Authorizer
+          ModelSelectionExpression:
+            name: ModelSelection
+          RouteId:
+            name: ID
+          RouteKey:
+            name: Key
+      RouteResponse:
+        fields:
+          ApiId:
+            name: API
+          RouteId:
+            name: Route
+          RouteResponseKey:
+            name: Key
+          RouteResponseId:
+            name: ID
+      Stage:
+        fields:
+          AccessLogSettings:
+            name: AccessLog
+          ApiId:
+            name: API
+          DefaultRouteSettings:
+            name: DefaultRoute
+          DefaultRouteSettings.DataTraceEnabled:
+            name: Tracing
+          DefaultRouteSettings.DetailedMetricsEnabled:
+            name: Metrics
+          DefaultRouteSettings.LoggingLevel:
+            name: LogLevel
+          DeploymentId:
+            name: Deployment
+          StageName:
+            name: Name
+          StageVariables:
+            name: Variables
+          CreatedDate:
+            name: Created
+          LastUpdatedDate:
+            name: Updated
+      VpcLink:
+        name: VPCLink
+        fields:
+          SecurityGroupIds:
+            name: SecurityGroups
+          SubnetIds:
+            name: Subnets
+          CreatedDate:
+            name: Created
+          VpcLinkId:
+            name: ID
+          VpcLinkStatus:
+            name: Status
+          VpcLinkStatusMessage:
+            name: StatusMessage
+          VpcLinkStatusVersion:
+            name: Version
+  Lambda:
+    resources:
+      Alias:
+        fields:
+          AliasArn:
+            name: ARN
+      EventSourceMapping:
+        fields:
+          EventSourceArn:
+            name: EventSource
+          FunctionName:
+            name: Function
+          MaximumBatchingWindowInSeconds:
+            name: MaxBatchWindow
+          MaximumRecordAgeInSeconds:
+            name: MaxRecordAge
+          MaximumRetryAttempts:
+            name: MaxRetries
+      Function:
+        fields:
+          Code:
+            noinput: true
+          DeadLetterConfig:
+            name: DeadLetter
+          DeadLetterConfig.TargetArn:
+            name: ARN
+          FunctionName:
+            name: Name
+          TracingConfig:
+            name: Tracing
+          VpcConfig:
+            name: VPC
+          VpcConfig.SecurityGroupIds:
+            name: SecurityGroups
+          VpcConfig.SubnetIds:
+            name: Subnets
+          FunctionArn:
+            name: ARN
+            cloudformation: Arn,att
+        methods:
+          - |
+            // SetS3SourceCode sets the given bucket and key to use as source code for the
+            // function.
+            func (f *{{.Type}}) SetS3SourceCode(bucket, key string) {
+              f.Code.S3Bucket = &bucket
+              f.Code.S3Key = &key
+            }
+      Permission:
+        fields:
+          FunctionName:
+            name: Function
+  IAM:
+    resources:
+      AccountAlias:
+        fields:
+          AccountAlias:
+            name: Alias
+      Group:
+        output: Group
+        fields:
+          GroupName:
+            name: Name
+          CreateDate:
+            name: Created
+          GroupId:
+            name: ID
+      InstanceProfile:
+        fields:
+          InstanceProfileName:
+            name: Name
+          CreateDate:
+            name: Created
+      Policy:
+        output: Policy
+        fields:
+          PolicyDocument:
+            name: Document
+          PolicyName:
+            name: Name
+      Role:
+        output: Role
+        fields:
+          AssumeRolePolicyDocument:
+            name: AssumeRolePolicy
+          RoleName:
+            name: Name
