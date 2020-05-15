@@ -7,14 +7,15 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/external"
 	"github.com/func/func/cloudformation"
-	"github.com/func/func/provider/aws"
+	"github.com/func/func/provider/aws/apigatewayv2"
+	"github.com/func/func/provider/aws/iam"
+	"github.com/func/func/provider/aws/lambda"
 	"github.com/func/func/resource"
 	"github.com/func/func/source"
 	"github.com/func/func/ui"
@@ -43,8 +44,9 @@ func NewApp(verbose bool) *App {
 func (a *App) loadResources(dir string) (resource.List, hcl.Diagnostics) {
 	if a.loader == nil {
 		reg := &resource.Registry{}
-		reg.Add("aws:iam_role", reflect.TypeOf(&aws.IAMRole{}))
-		reg.Add("aws:lambda_function", reflect.TypeOf(&aws.LambdaFunction{}))
+		iam.Register(reg)
+		lambda.Register(reg)
+		apigatewayv2.Register(reg)
 
 		a.loader = &resource.Loader{
 			Registry: reg,
