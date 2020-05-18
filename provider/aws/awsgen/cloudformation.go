@@ -147,7 +147,8 @@ func (s *cfspec) resolveType(resource string, prop property) Type {
 	}
 	// Special cases:
 	if (resource == "AWS::ImageBuilder::Image" && prop.Type == "OutputResources") ||
-		(resource == "AWS::SSM::Association" && prop.ItemType == "ParameterValues") {
+		(resource == "AWS::SSM::Association" && prop.ItemType == "ParameterValues") ||
+		(resource == "AWS::Macie::FindingsFilter" && prop.ItemType == "FindingsFilterListItem") {
 		return nil
 	}
 	panic(fmt.Sprintf("Cannot resolve %s type from:\n%#v", resource, prop))
